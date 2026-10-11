@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { isInsideMalaysia, validateMYTarget, classifyZone } from "../server/lib/geofence";
+import { isInsideMalaysia, validateMYTarget, classifyZone, haversineKm, STRATEGIC_CORRIDORS } from "../server/lib/geofence";
 import { assessRisk, verifyClaim } from "../server/lib/riskEngine";
-import { getAdvisories, buildQuakeTimeline, STATE_CENTERS } from "../server/lib/reference";
+import { getAdvisories, buildQuakeTimeline, STATE_CENTERS, searchCustomsReference } from "../server/lib/reference";
 import { runAgent } from "../server/lib/agents";
+import { buildSitrep, listSitreps, deleteSitrep } from "../server/lib/sitrep";
 
 describe("Malaysia-only geofencing (spec §2 & §10)", () => {
   it("Port Klang diterima", () => expect(validateMYTarget(2.999, 101.392, "Port Klang").ok).toBe(true));
@@ -75,5 +76,28 @@ describe("Rujukan statik + ejen (peningkatan V2.0)", () => {
       evidence: [],
     });
     expect(r.status).toBe("INSUFFICIENT EVIDENCE");
+  });
+  it("semua titik koridor strategik berada dalam Malaysia & haversine tepat", () => {
+    for (const c of STRATEGIC_CORRIDORS) {
+      for (const pt of c.points) {
+        expect(isInsideMalaysia(pt.lat, pt.lon), `${c.id}:${pt.name}`).toBe(true);
+      }
+    }
+    const dist = haversineKm(2.999, 101.392, 3.139, 101.687); // Port Klang ke KL
+    expect(dist).toBeGreaterThan(25);
+    expect(dist).toBeLessThan(50);
+  });
+  it("rujukan kastam HS code & arkib SITREP berfungsi", () => {
+    const palm = searchCustomsReference("1511");
+    expect(palm.length).toBeGreaterThan(0);
+    const risk = assessRisk({
+      category: "kastam",
+      methodology: "ujian",
+      factors: [{ name: "a", weight: 1, value: 3, note: "ok" }],
+      evidence: [{ observation: "Akta Kastam 1967", source: "JKDM", sourceUrl: "https://www.customs.gov.my/", timestamp: new Date().toISOString(), confidence: "sederhana" }],
+    });
+    const sr = buildSitrep({ location: "Port Klang", lat: 2.999, lon: 101.392, assetCategory: "kastam", risk, agents: [] });
+    expect(listSitreps().some((x) => x.reportId === sr.reportId)).toBe(true);
+    expect(deleteSitrep(sr.reportId)).toBe(true);
   });
 });

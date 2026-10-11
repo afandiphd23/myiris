@@ -1,4 +1,4 @@
-// IRIS Malaysia V2.0 — penjana SITREP profesional.
+// IRIS Malaysia V2.0 — penjana SITREP profesional & arkib dalam memori.
 import type { AgentFinding } from "./agents.js";
 import type { RiskAssessment } from "./riskEngine.js";
 
@@ -13,6 +13,19 @@ export interface Sitrep {
   nextReview: string; agents: AgentFinding[];
 }
 
+const sitrepArchive: Sitrep[] = [];
+
+export function listSitreps(): Sitrep[] {
+  return [...sitrepArchive];
+}
+
+export function deleteSitrep(reportId: string): boolean {
+  const idx = sitrepArchive.findIndex((s) => s.reportId === reportId);
+  if (idx === -1) return false;
+  sitrepArchive.splice(idx, 1);
+  return true;
+}
+
 export function buildSitrep(input: {
   location: string; lat: number; lon: number; assetCategory: string;
   risk: RiskAssessment; agents: AgentFinding[];
@@ -20,7 +33,7 @@ export function buildSitrep(input: {
   const nowMYT = new Date(new Date().getTime() + 8 * 3600e3).toISOString().replace("T", " ").slice(0, 19) + " MYT";
   const rid = `IRIS-MY-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
   const citations = [...new Map(input.agents.flatMap((a) => a.sources).map((s) => [s.url, s])).values()];
-  return {
+  const report: Sitrep = {
     reportId: rid, title: "IRIS MALAYSIA // NATIONAL SITUATIONAL AWARENESS REPORT",
     location: input.location, coords: [input.lat, input.lon], assetCategory: input.assetCategory,
     timestampMYT: nowMYT,
@@ -30,9 +43,12 @@ export function buildSitrep(input: {
     confidence: input.risk.evidence.length === 0 ? "RENDAH — bukti tidak mencukupi" : "SEDERHANA — berdasarkan sumber awam disahkan",
     limitations: input.risk.limitations,
     geoContext: `Koordinat ${input.lat.toFixed(4)}, ${input.lon.toFixed(4)} dalam Malaysia. Rujuk JUPEM/MyGDI untuk sempadan tepat.`,
-    regulatory: "Konteks kawal selia Malaysia: Akta Kastam 1967 (JKDM), notis CAAM (penerbangan), notis Jabatan Laut (maritim), amaran METMalaysia/NADMA (bencana). Bukan pengelasan keselamatan rasmi kerajaan.",
+    regulatory: "Konteks kawal selia Malaysia: Akta Kastam 1967 (JKDM), Akta Perdagangan Strategik 2010 (MITI), notis CAAM (penerbangan), notis Jabatan Laut (maritim), amaran METMalaysia/NADMA (bencana). Bukan pengelasan keselamatan rasmi kerajaan.",
     actions: input.risk.followUp, citations,
     nextReview: input.risk.status === "CRITICAL" || input.risk.status === "HIGH" ? "1 jam" : input.risk.status === "MODERATE" ? "6 jam" : "24 jam",
     agents: input.agents,
   };
+  sitrepArchive.unshift(report);
+  if (sitrepArchive.length > 50) sitrepArchive.pop();
+  return report;
 }

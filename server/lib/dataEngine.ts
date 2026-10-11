@@ -35,6 +35,7 @@ export const OFFICIAL_PORTALS = [
   { id: "metmalaysia", name: "METMalaysia — Amaran Cuaca", url: "https://www.met.gov.my/" },
   { id: "infobanjir", name: "JPS InfoBanjir — Aras Sungai & Banjir", url: "https://infobanjir.water.gov.my/" },
   { id: "nadma", name: "NADMA — Info Bencana", url: "https://www.nadma.gov.my/" },
+  { id: "apims", name: "JAS APIMS — Indeks Pencemaran Udara", url: "https://apims.doe.gov.my/" },
   { id: "caam", name: "CAAM — Notis Penerbangan Awam", url: "https://www.caam.gov.my/" },
   { id: "jabatanlaut", name: "Jabatan Laut Malaysia — Notis Maritim", url: "https://www.marine.gov.my/" },
   { id: "jukm", name: "JUPEM / MyGDI — Rujukan Geospatial", url: "https://www.jupem.gov.my/" },
@@ -50,7 +51,18 @@ export async function getQuakes() {
   try {
     const data = await cached("quakes", 600, () => fetchJson(url)) as any;
     setHealth({ id: "usgs", name: "USGS Earthquake (live)", kind: "live", url: "https://earthquake.usgs.gov/", lastOk: new Date().toISOString(), lastError: null, freshSec: 600 });
-    return { live: true as const, count: data?.features?.length ?? 0, events: (data?.features ?? []).slice(0, 20).map((f: any) => ({ id: f.id, mag: f.properties?.mag, place: f.properties?.place, time: new Date(f.properties?.time).toISOString(), url: f.properties?.url, coords: f.geometry?.coordinates })) };
+    return {
+      live: true as const,
+      count: data?.features?.length ?? 0,
+      events: (data?.features ?? []).slice(0, 25).map((f: any) => ({
+        id: f.id,
+        mag: f.properties?.mag,
+        place: f.properties?.place,
+        time: new Date(f.properties?.time).toISOString(),
+        url: f.properties?.url,
+        coords: f.geometry?.coordinates,
+      })),
+    };
   } catch (e: any) {
     setHealth({ id: "usgs", name: "USGS Earthquake (live)", kind: "live", url: "https://earthquake.usgs.gov/", lastOk: null, lastError: String(e?.message ?? e), freshSec: null });
     return { live: false as const, count: 0, events: [], error: "USGS tidak dapat dicapai — semak sambungan." };
@@ -59,27 +71,97 @@ export async function getQuakes() {
 
 // 2) Cuaca model (Open-Meteo, live) + pautan METMalaysia. Dilabel jelas BUKAN data rasmi METMalaysia.
 export async function getWeather(lat: number, lon: number) {
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,precipitation,weather_code,wind_speed_10m&hourly=precipitation_probability&timezone=Asia%2FKuala_Lumpur&forecast_days=2`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=precipitation_probability,temperature_2m,wind_speed_10m&timezone=Asia%2FKuala_Lumpur&forecast_days=2`;
   try {
     const data = await cached(`wx-${lat.toFixed(2)}-${lon.toFixed(2)}`, 900, () => fetchJson(url)) as any;
-    setHealth({ id: "openmeteo", name: "Open-Meteo (model, live)", kind: "live", url: "https://open-meteo.com/", lastOk: new Date().toISOString(), lastError: null, freshSec: 900 });
+    setHealth({ id: "openmeteo", name: "Open-Meteo Weather (model, live)", kind: "model", url: "https://open-meteo.com/", lastOk: new Date().toISOString(), lastError: null, freshSec: 900 });
+    const hourlyTimes: string[] = (data?.hourly?.time ?? []).slice(0, 24);
+    const hourlyPrecip: number[] = (data?.hourly?.precipitation_probability ?? []).slice(0, 24);
+    const hourlyTemp: number[] = (data?.hourly?.temperature_2m ?? []).slice(0, 24);
+    const hourlyWind: number[] = (data?.hourly?.wind_speed_10m ?? []).slice(0, 24);
+    const forecast24h = hourlyTimes.map((t, i) => ({
+      time: t,
+      precipProb: hourlyPrecip[i] ?? 0,
+      tempC: hourlyTemp[i] ?? null,
+      windKmh: hourlyWind[i] ?? null,
+    }));
     return {
-      live: true as const, disclaimer: "Data model cuaca (bukan amaran rasmi). Untuk amaran rasmi rujuk METMalaysia.",
-      metMalaysia: "https://www.met.gov.my/", current: data?.current,
+      live: true as const,
+      disclaimer: "Data model cuaca (bukan amaran rasmi). Untuk amaran rasmi rujuk METMalaysia.",
+      metMalaysia: "https://www.met.gov.my/",
+      current: data?.current,
       precipProbMax: Math.max(...(data?.hourly?.precipitation_probability ?? [0]).slice(0, 48)),
+      forecast24h,
     };
   } catch (e: any) {
-    setHealth({ id: "openmeteo", name: "Open-Meteo (model, live)", kind: "live", url: "https://open-meteo.com/", lastOk: null, lastError: String(e?.message ?? e), freshSec: null });
-    return { live: false as const, disclaimer: "Cuaca tidak dapat dicapai.", error: String(e?.message ?? e) };
+    setHealth({ id: "openmeteo", name: "Open-Meteo Weather (model, live)", kind: "model", url: "https://open-meteo.com/", lastOk: null, lastError: String(e?.message ?? e), freshSec: null });
+    return { live: false as const, disclaimer: "Cuaca tidak dapat dicapai.", error: String(e?.message ?? e), forecast24h: [] };
   }
 }
 
-// 3) ADS-B awam (OpenSky, live, had kadar). Gagal lembut → status outage jelas.
+// 3) Maritim & Ombak (Open-Meteo Marine API, model, live)
+export async function getMarineWeather(lat: number, lon: number) {
+  const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&current=wave_height,wave_direction,wave_period,swell_wave_height&hourly=wave_height&timezone=Asia%2FKuala_Lumpur&forecast_days=2`;
+  try {
+    const data = await cached(`marine-${lat.toFixed(2)}-${lon.toFixed(2)}`, 900, () => fetchJson(url, 8000)) as any;
+    const waveHeight = data?.current?.wave_height ?? null;
+    const wavePeriod = data?.current?.wave_period ?? null;
+    const waveDirection = data?.current?.wave_direction ?? null;
+    const maxWave24h = Math.max(0, ...((data?.hourly?.wave_height ?? []).filter((x: any) => typeof x === "number").slice(0, 24)));
+    setHealth({ id: "openmeteo-marine", name: "Open-Meteo Marine (model, live)", kind: "model", url: "https://open-meteo.com/en/docs/marine-weather-api", lastOk: new Date().toISOString(), lastError: null, freshSec: 900 });
+    return {
+      live: waveHeight != null,
+      waveHeightM: waveHeight,
+      wavePeriodS: wavePeriod,
+      waveDirectionDeg: waveDirection,
+      maxWave24hM: maxWave24h || waveHeight || 0,
+      disclaimer: "Model ombak maritim Open-Meteo. Rujuk Notis Pelayaran Jabatan Laut Malaysia & METMalaysia.",
+    };
+  } catch (e: any) {
+    setHealth({ id: "openmeteo-marine", name: "Open-Meteo Marine (model, live)", kind: "model", url: "https://open-meteo.com/en/docs/marine-weather-api", lastOk: null, lastError: String(e?.message ?? e), freshSec: null });
+    return { live: false as const, waveHeightM: null, wavePeriodS: null, waveDirectionDeg: null, maxWave24hM: 0, error: String(e?.message ?? e) };
+  }
+}
+
+// 4) Kualiti Udara & Jerebu (Open-Meteo Air Quality API, model, live)
+export async function getAirQuality(lat: number, lon: number) {
+  const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide&timezone=Asia%2FKuala_Lumpur`;
+  try {
+    const data = await cached(`aq-${lat.toFixed(2)}-${lon.toFixed(2)}`, 900, () => fetchJson(url, 8000)) as any;
+    const aqi = data?.current?.us_aqi ?? null;
+    const pm25 = data?.current?.pm2_5 ?? null;
+    const pm10 = data?.current?.pm10 ?? null;
+    setHealth({ id: "openmeteo-aq", name: "Open-Meteo Air Quality (model, live)", kind: "model", url: "https://open-meteo.com/en/docs/air-quality-api", lastOk: new Date().toISOString(), lastError: null, freshSec: 900 });
+    return {
+      live: aqi != null || pm25 != null,
+      aqi,
+      pm25,
+      pm10,
+      apimsUrl: "https://apims.doe.gov.my/",
+      disclaimer: "Model kualiti udara (PM2.5/PM10/AQI). Sahkan bacaan rasmi IPU melalui portal JAS APIMS.",
+    };
+  } catch (e: any) {
+    setHealth({ id: "openmeteo-aq", name: "Open-Meteo Air Quality (model, live)", kind: "model", url: "https://open-meteo.com/en/docs/air-quality-api", lastOk: null, lastError: String(e?.message ?? e), freshSec: null });
+    return { live: false as const, aqi: null, pm25: null, pm10: null, apimsUrl: "https://apims.doe.gov.my/", error: String(e?.message ?? e) };
+  }
+}
+
+// 5) ADS-B awam (OpenSky, live, had kadar). Gagal lembut → status outage jelas.
 export async function getAdsb(lamin = 0.8, lamax = 7.7, lomin = 99.3, lomax = 119.5) {
   const url = `https://opensky-network.org/api/states/all?lamin=${lamin}&lamax=${lamax}&lomin=${lomin}&lomax=${lomax}`;
   try {
     const data = await cached("adsb", 120, () => fetchJson(url, 15000)) as any;
-    const states = (data?.states ?? []).slice(0, 100).map((s: any[]) => ({ icao: s[0], callsign: (s[1] ?? "").trim(), lon: s[5], lat: s[6], altM: s[7], vel: s[9], time: data?.time }));
+    const states = (data?.states ?? []).slice(0, 120).map((s: any[]) => ({
+      icao: s[0],
+      callsign: (s[1] ?? "").trim(),
+      originCountry: s[2] ?? "",
+      lon: s[5],
+      lat: s[6],
+      altM: s[7],
+      vel: s[9],
+      heading: s[10],
+      time: data?.time,
+    }));
     setHealth({ id: "opensky", name: "OpenSky ADS-B (live, had kadar)", kind: "live", url: "https://opensky-network.org/", lastOk: new Date().toISOString(), lastError: null, freshSec: 120 });
     return { live: true as const, count: states.length, states, time: data?.time };
   } catch (e: any) {
