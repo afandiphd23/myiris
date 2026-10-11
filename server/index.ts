@@ -336,6 +336,10 @@ app.delete("/api/sitreps/:id", (req, res) => {
 
 app.get("/api/audit", (_req, res) => res.json(getAudit()));
 
+// Laluan /api yang tidak dikenali → JSON 404 (jangan jatuh ke SPA index.html,
+// jika tidak frontend gagal parse dengan "Unexpected token ..." yang mengelirukan)
+app.use("/api", (_req, res) => res.status(404).json({ error: "Endpoint API tidak wujud." }));
+
 // --- Static frontend (produksi) / Vite dev middleware ---
 async function startServer() {
   if (process.env.NODE_ENV === "production") {
@@ -351,7 +355,7 @@ async function startServer() {
     app.use(vite.middlewares);
   }
 
-  const PORT = Number(process.env.PORT ?? 3000);
+  const PORT = Number(process.env.PORT ?? 3001);
   app.listen(PORT, "0.0.0.0", () => console.log(`IRIS Malaysia V2.0 listening on http://0.0.0.0:${PORT}`));
 }
 
