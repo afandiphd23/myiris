@@ -1,0 +1,38 @@
+{
+  "name": "iris-malaysia-v2",
+  "private": true,
+  "version": "2.0.0",
+  "description": "IRIS Malaysia V2.0 — Malaysia-Only AI Geospatial Intelligence & Real-Time Situational Awareness",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server/index.ts",
+    "dev:client": "vite",
+    "build": "vite build && esbuild server/index.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs",
+    "start": "node dist/server.cjs",
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^0.546.0",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/express": "^4.17.21",
+    "@types/leaflet": "^1.9.12",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "esbuild": "^0.25.0",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3",
+    "vitest": "^3.0.0"
+  }
+}

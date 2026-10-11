@@ -1,0 +1,31 @@
+export const STR = {
+  ms: {
+    title: "IRIS MALAYSIA", sub: "National Situational Awareness",
+    search: "Cari lokasi Malaysia…", analyze: "Analisis", sitrep: "Jana SITREP",
+    layers: "Lapisan", maritime: "Maritim", aviation: "Penerbangan", disaster: "Bencana",
+    sources: "Verifikasi Sumber", audit: "Log Audit", exportJson: "Eksport JSON", exportPdf: "Eksport PDF",
+    state: "Negeri", asset: "Kategori Aset", foreignRejected: "Sasaran asing ditolak",
+    freshness: "Kesegaran Data", portals: "Portal Rasmi", risk: "Risiko", evidence: "Bukti",
+    actions: "Tindakan Susulan", limitations: "Batasan Data", nextReview: "Semakan Seterusnya",
+    live: "LANGSUNG", model: "MODEL", portal: "PORTAL", down: "TIADA",
+    allStates: "Semua Negeri", autoRefresh: "Auto-segar", off: "Mati",
+    wxNow: "Cuaca Model", quakeHist: "Gempa 30 Hari (USGS)",
+    floodRef: "Rujukan Banjir (statik)", alertBanner: "AMARAN DISAHKAN",
+    fetchedAgo: "diambil", advisoriesNote: "RUJUKAN statik — sahkan status semasa via InfoBanjir/METMalaysia.",
+  },
+  en: {
+    title: "IRIS MALAYSIA", sub: "National Situational Awareness",
+    search: "Search Malaysian locations…", analyze: "Analyze", sitrep: "Generate SITREP",
+    layers: "Layers", maritime: "Maritime", aviation: "Aviation", disaster: "Disaster",
+    sources: "Source Verification", audit: "Audit Log", exportJson: "Export JSON", exportPdf: "Export PDF",
+    state: "State", asset: "Asset Category", foreignRejected: "Foreign target rejected",
+    freshness: "Data Freshness", portals: "Official Portals", risk: "Risk", evidence: "Evidence",
+    actions: "Follow-up Actions", limitations: "Data Limitations", nextReview: "Next Review",
+    live: "LIVE", model: "MODEL", portal: "PORTAL", down: "UNAVAILABLE",
+    allStates: "All States", autoRefresh: "Auto-refresh", off: "Off",
+    wxNow: "Model Weather", quakeHist: "30-Day Quakes (USGS)",
+    floodRef: "Flood Reference (static)", alertBanner: "VERIFIED ALERT",
+    fetchedAgo: "fetched", advisoriesNote: "Static REFERENCE — verify current status via InfoBanjir/METMalaysia.",
+  },
+} as const;
+export type Lang = keyof typeof STR;
