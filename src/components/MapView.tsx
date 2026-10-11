@@ -50,6 +50,41 @@ function squareIcon(color: string, size = 11): L.DivIcon {
   });
 }
 
+// Label bandar kekal — teks putih berhalo gelap supaya terbaca atas sebarang basemap berwarna
+function cityLabelIcon(name: string): L.DivIcon {
+  return L.divIcon({
+    className: "iris-city",
+    html: `<span style="font:600 11px/1.2 system-ui,sans-serif;color:#fff;text-shadow:-1px -1px 0 #0f172a,1px -1px 0 #0f172a,-1px 1px 0 #0f172a,1px 1px 0 #0f172a,0 0 6px rgba(0,0,0,.9);white-space:nowrap;">● ${name}</span>`,
+    iconSize: [0, 0],
+    iconAnchor: [-8, -8],
+  });
+}
+
+const CITY_LABELS: { name: string; lat: number; lon: number }[] = [
+  { name: "Kuala Lumpur", lat: 3.139, lon: 101.687 },
+  { name: "George Town", lat: 5.414, lon: 100.329 },
+  { name: "Johor Bahru", lat: 1.492, lon: 103.741 },
+  { name: "Kota Bharu", lat: 6.133, lon: 102.238 },
+  { name: "Kuantan", lat: 3.807, lon: 103.326 },
+  { name: "Kuching", lat: 1.553, lon: 110.359 },
+  { name: "Kota Kinabalu", lat: 5.978, lon: 116.075 },
+];
+
+// Skala warna magnitud gempa: kuning → jingga → merah → merah pekat
+function quakeColor(mag: number): { color: string; fill: string } {
+  if (mag >= 6.5) return { color: "#b91c1c", fill: "#dc2626" };
+  if (mag >= 5.5) return { color: "#ef4444", fill: "#f87171" };
+  if (mag >= 4.5) return { color: "#f59e0b", fill: "#fbbf24" };
+  return { color: "#eab308", fill: "#fde047" };
+}
+
+// Warna ADS-B mengikut altitud: rendah (sian) → sederhana (biru) → tinggi (ungu)
+function adsbColor(altM: number | null | undefined): string {
+  if (altM != null && altM >= 10000) return "#a78bfa";
+  if (altM != null && altM >= 5000) return "#38bdf8";
+  return "#22d3ee";
+}
+
 export default function MapView({
   lat,
   lon,
@@ -79,11 +114,15 @@ export default function MapView({
     if (mode !== "live") return;
     if (!containerRef.current || mapRef.current) return;
 
-    // TANPA KUNCI: semua jubin lalai bebas API-key. CARTO dialih keluar
-    // kerana cartocdn kini memaparkan watermark "API KEY REQUIRED".
-    // Gelap lalai = Esri Dark Gray (base + reference), OSM/Esri Satelit/OTM sebagai alternatif.
+    // TANPA KUNCI: semua jubin bebas API-key (CARTO dialih keluar — watermark "API KEY REQUIRED").
+    // Lalai = basemap BERWARNA supaya peta hidup: OSM Standard, dengan alternatif
+    // Jalan Berwarna (Esri), Gelap (Esri Dark Gray), Satelit (Esri) dan Topografi (OTM).
     const esriAttr =
       "Tiles &copy; Esri &mdash; Esri, TomTom, Garmin, FAO, NOAA, USGS, &copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors";
+    const street = L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 19, attribution: esriAttr }
+    );
     const darkBase = L.tileLayer(
       "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
       { maxNativeZoom: 16, maxZoom: 19, attribution: esriAttr }
@@ -119,17 +158,18 @@ export default function MapView({
       maxBoundsViscosity: 0.7,
       zoomControl: false,
       worldCopyJump: true,
-      layers: [dark],
+      layers: [osm],
     });
 
-    darkBase.on("tileerror", () => setTileError(true));
     osm.on("tileerror", () => setTileError(true));
+    street.on("tileerror", () => setTileError(true));
 
     L.control
       .layers(
         {
-          "Gelap (Esri, tanpa kunci)": dark,
-          "OSM Standard": osm,
+          "Ceria (OSM)": osm,
+          "Jalan Berwarna (Esri)": street,
+          "Gelap (Esri)": dark,
           "Satelit (Esri)": satellite,
           "Topografi (OTM)": topo,
         },
@@ -188,17 +228,24 @@ export default function MapView({
     const quakeArray = Array.isArray(quakes) ? quakes : [];
     const adsbArray = Array.isArray(adsb) ? adsb : [];
 
+    // Label bandar utama — sentiasa dipapar supaya peta berwarna bernyawa
+    CITY_LABELS.forEach((c) => {
+      L.marker([c.lat, c.lon], { icon: cityLabelIcon(c.name), interactive: false, keyboard: false }).addTo(overlay);
+    });
+
     if (show.geofence) {
+      // Kod warna zon: Semenanjung = biru langit, Sabah/Sarawak = hijau zamrud,
+      // tuntutan bertindih = ambar, Singapura = merah (luar geofence)
       const boxes: { b: L.LatLngBoundsExpression; color: string; fill: number; dash?: string; name: string }[] = [
-        { b: [[1.0, 99.35], [7.65, 104.7]], color: "#38bdf8", fill: 0.02, dash: "5 4", name: "Geofence Semenanjung" },
-        { b: [[0.85, 109.0], [7.4, 119.4]], color: "#38bdf8", fill: 0.02, dash: "5 4", name: "Geofence Sabah/Sarawak" },
-        { b: [[5.5, 111.0], [7.4, 118.0]], color: "#f59e0b", fill: 0.04, dash: "3 4", name: "Zon Tuntutan Bertindih" },
-        { b: [[1.0, 103.6], [1.55, 104.15]], color: "#ef4444", fill: 0.14, name: "Singapura (Luar Geofence)" },
+        { b: [[1.0, 99.35], [7.65, 104.7]], color: "#38bdf8", fill: 0.07, dash: "5 4", name: "Geofence Semenanjung" },
+        { b: [[0.85, 109.0], [7.4, 119.4]], color: "#10b981", fill: 0.07, dash: "5 4", name: "Geofence Sabah/Sarawak" },
+        { b: [[5.5, 111.0], [7.4, 118.0]], color: "#f59e0b", fill: 0.1, dash: "3 4", name: "Zon Tuntutan Bertindih" },
+        { b: [[1.0, 103.6], [1.55, 104.15]], color: "#ef4444", fill: 0.16, name: "Singapura (Luar Geofence)" },
       ];
       boxes.forEach((g) => {
         L.rectangle(g.b, {
           color: g.color,
-          weight: 1.2,
+          weight: 1.5,
           dashArray: g.dash,
           fillColor: g.color,
           fillOpacity: g.fill,
@@ -210,9 +257,12 @@ export default function MapView({
 
     if (corridorPoints.length > 1) {
       const line = corridorPoints.map((p) => [p.lat, p.lon] as [number, number]);
-      L.polyline(line, { color: "#22d3ee", weight: 2.5, dashArray: "6 4", opacity: 0.9 }).addTo(overlay);
+      // Kilauan sian di bawah garis koridor supaya menonjol atas basemap berwarna
+      L.polyline(line, { color: "#22d3ee", weight: 8, opacity: 0.22 }).addTo(overlay);
+      L.polyline(line, { color: "#0e7490", weight: 4, opacity: 0.9 }).addTo(overlay);
+      L.polyline(line, { color: "#a5f3fc", weight: 2, dashArray: "6 4", opacity: 0.95 }).addTo(overlay);
       corridorPoints.forEach((p) => {
-        L.marker([p.lat, p.lon], { icon: dotIcon("#0891b2", 12, "#22d3ee"), title: `Koridor: ${p.name}` })
+        L.marker([p.lat, p.lon], { icon: dotIcon("#0891b2", 12, "#ecfeff"), title: `Koridor: ${p.name}` })
           .bindPopup(`<b>Koridor: ${p.name}</b><br/><span>${p.lat.toFixed(3)}°N, ${p.lon.toFixed(3)}°E</span>`)
           .addTo(overlay);
       });
@@ -222,13 +272,14 @@ export default function MapView({
       quakeArray.slice(0, 25).forEach((q: any, idx: number) => {
         const [qlon, qlat] = q.coords ?? [0, 0];
         if (!qlat || !qlon) return;
-        const isStrong = (q.mag ?? 0) >= 5.5;
+        const mag = q.mag ?? 4;
+        const qc = quakeColor(mag);
         L.circleMarker([qlat, qlon], {
-          radius: Math.max(5, 2 + (q.mag ?? 4) * 1.6),
-          color: isStrong ? "#ef4444" : "#f59e0b",
-          weight: 1.5,
-          fillColor: isStrong ? "#dc2626" : "#d97706",
-          fillOpacity: 0.65,
+          radius: Math.max(5, 2 + mag * 1.6),
+          color: qc.color,
+          weight: 2,
+          fillColor: qc.fill,
+          fillOpacity: 0.7,
         })
           .bindPopup(
             `<b>USGS M${q.mag ?? "?"} — ${q.place ?? "gempa"}</b><br/><span>${qlat.toFixed(2)}°N, ${qlon.toFixed(2)}°E · ${q.time ? String(q.time).slice(0, 16) : ""}</span>`
@@ -248,7 +299,8 @@ export default function MapView({
     if (show.maritime) {
       ports.forEach((p: any) => {
         if (p.lat == null || p.lon == null) return;
-        L.marker([p.lat, p.lon], { icon: dotIcon("#065f46", 13, "#10b981"), title: p.name })
+        L.marker([p.lat, p.lon], { icon: dotIcon("#059669", 13, "#ecfdf5"), title: p.name })
+          .bindTooltip(`⚓ ${p.name}`, { direction: "top", offset: [0, -8] })
           .bindPopup(
             `<b>Pelabuhan/Maritim: ${p.name}</b><br/><span>${p.state ?? "Malaysia"} (${Number(p.lat).toFixed(3)}°N, ${Number(p.lon).toFixed(3)}°E)</span>`
           )
@@ -259,7 +311,8 @@ export default function MapView({
     if (show.aviation) {
       airports.forEach((ap: any) => {
         if (ap.lat == null || ap.lon == null) return;
-        L.marker([ap.lat, ap.lon], { icon: dotIcon("#4c1d95", 12, "#a78bfa"), title: ap.name })
+        L.marker([ap.lat, ap.lon], { icon: dotIcon("#7c3aed", 12, "#ede9fe"), title: ap.name })
+          .bindTooltip(`✈ ${ap.name}`, { direction: "top", offset: [0, -8] })
           .bindPopup(
             `<b>Lapangan Terbang: ${ap.name}</b><br/><span>${ap.state ?? ""} (${Number(ap.lat).toFixed(3)}°N, ${Number(ap.lon).toFixed(3)}°E)</span>`
           )
@@ -267,12 +320,13 @@ export default function MapView({
       });
       adsbArray.slice(0, 100).forEach((s: any) => {
         if (!s.lat || !s.lon) return;
+        const ac = adsbColor(s.altM);
         L.circleMarker([s.lat, s.lon], {
-          radius: 3.5,
-          color: "#38bdf8",
+          radius: 4,
+          color: "#0f172a",
           weight: 1,
-          fillColor: "#38bdf8",
-          fillOpacity: 0.9,
+          fillColor: ac,
+          fillOpacity: 0.95,
         })
           .bindTooltip(`ADS-B: ${s.callsign || s.icao} (${s.altM ?? "?"} m)`, { direction: "top", offset: [0, -4] })
           .bindPopup(
@@ -282,27 +336,27 @@ export default function MapView({
       });
     }
 
-    // Active target + range rings (always on top)
+    // Active target + range rings (always on top) — jingga terang supaya menonjol atas basemap berwarna
     if (show.rangeRings) {
       [25000, 50000, 100000].forEach((rM) => {
         L.circle([lat, lon], {
           radius: rM,
-          color: "#38bdf8",
-          weight: 1,
-          dashArray: "3 3",
-          opacity: 0.45,
+          color: "#f97316",
+          weight: 1.5,
+          dashArray: "4 3",
+          opacity: 0.65,
           fill: false,
         }).addTo(targetLayer);
       });
     }
     L.marker([lat, lon], {
-      icon: dotIcon("#0284c7", 16, "#e0f2fe"),
+      icon: dotIcon("#ea580c", 17, "#fff7ed"),
       title: "Sasaran aktif",
       zIndexOffset: 1000,
     })
       .bindPopup(`<b>Sasaran: ${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E</b>`)
       .addTo(targetLayer);
-    L.circleMarker([lat, lon], { radius: 3, color: "#fff", weight: 2, fillColor: "#fff", fillOpacity: 1 }).addTo(
+    L.circleMarker([lat, lon], { radius: 3.5, color: "#7c2d12", weight: 2, fillColor: "#fff", fillOpacity: 1 }).addTo(
       targetLayer
     );
   }, [mode, lat, lon, quakes, adsb, locations, floodProne, corridorPoints, show]);
@@ -423,13 +477,15 @@ export default function MapView({
 
       <div className="no-print absolute bottom-3 left-3 right-3 z-[1000] flex flex-wrap items-center justify-between gap-2 rounded border border-slate-800/90 bg-slate-950/90 px-3 py-1.5 text-[11px] text-slate-300">
         <div className="flex flex-wrap items-center gap-2.5">
-          <span className="text-emerald-300">Pelabuhan (Hijau)</span>
+          <span className="text-emerald-300">● Pelabuhan</span>
           <span aria-hidden="true">·</span>
-          <span className="text-purple-300">Lapangan Terbang (Ungu)</span>
+          <span className="text-violet-300">● Lapangan Terbang</span>
           <span aria-hidden="true">·</span>
-          <span className="text-sky-300">ADS-B (Biru)</span>
+          <span className="text-sky-300">● ADS-B (sian→ungu ikut altitud)</span>
           <span aria-hidden="true">·</span>
-          <span className="text-amber-300">Seismik/Banjir (Jingga)</span>
+          <span className="text-amber-300">● Gempa (kuning→merah ikut magnitud)</span>
+          <span aria-hidden="true">·</span>
+          <span className="text-orange-300">◎ Sasaran + gelang 25/50/100km</span>
         </div>
         <div className="flex items-center gap-3">
           <label className="flex cursor-pointer items-center gap-1.5 text-slate-300">
