@@ -79,14 +79,20 @@ export default function MapView({
     if (mode !== "live") return;
     if (!containerRef.current || mapRef.current) return;
 
-    const dark = L.tileLayer(
-      "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-      {
-        maxZoom: 19,
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-      }
+    // TANPA KUNCI: semua jubin lalai bebas API-key. CARTO dialih keluar
+    // kerana cartocdn kini memaparkan watermark "API KEY REQUIRED".
+    // Gelap lalai = Esri Dark Gray (base + reference), OSM/Esri Satelit/OTM sebagai alternatif.
+    const esriAttr =
+      "Tiles &copy; Esri &mdash; Esri, TomTom, Garmin, FAO, NOAA, USGS, &copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors";
+    const darkBase = L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+      { maxNativeZoom: 16, maxZoom: 19, attribution: esriAttr }
     );
+    const darkRef = L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+      { maxNativeZoom: 16, maxZoom: 19, attribution: esriAttr }
+    );
+    const dark = L.layerGroup([darkBase, darkRef]);
     const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -116,13 +122,13 @@ export default function MapView({
       layers: [dark],
     });
 
-    dark.on("tileerror", () => setTileError(true));
+    darkBase.on("tileerror", () => setTileError(true));
     osm.on("tileerror", () => setTileError(true));
 
     L.control
       .layers(
         {
-          "Gelap (CARTO)": dark,
+          "Gelap (Esri, tanpa kunci)": dark,
           "OSM Standard": osm,
           "Satelit (Esri)": satellite,
           "Topografi (OTM)": topo,
