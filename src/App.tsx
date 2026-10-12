@@ -28,12 +28,12 @@ import {
   Newspaper,
   Landmark,
   Cpu,
-  LogOut,
 } from "lucide-react";
 import MapView from "./components/MapView";
 import LandingPage from "./components/LandingPage";
+import { GisButton, UserChip } from "./components/GoogleAuthArea";
 import { loadAlerts, saveAlerts, loadFavs, saveFavs, loadHistory, recordHistory, encodeShare, decodeShare, type AlertConfig, type FavPlace, type HistoryEntry } from "./lib/store";
-import { getGoogleClientId, loadGis, decodeJwt, toGoogleUser, loadUser, saveUser, googleLogout, type GoogleUser } from "./lib/googleAuth";
+import { getGoogleClientId, loadUser, saveUser, googleLogout, type GoogleUser } from "./lib/googleAuth";
 import { maybeAlert, ensureNotifyPermission, playBeep } from "./lib/notify";
 import { measurePath } from "./lib/geo";
 import { api } from "./lib/api";
@@ -170,7 +170,6 @@ export default function App() {
   const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory(loadUser()?.sub));
   // Login Google (kegemaran & sejarah diasing per pengguna)
   const [user, setUser] = useState<GoogleUser | null>(() => loadUser());
-  const gisBtnRef = useRef<HTMLDivElement>(null);
   const googleClientId = getGoogleClientId();
 
   const applyUser = (u: GoogleUser | null) => {
@@ -179,34 +178,6 @@ export default function App() {
     setFavs(loadFavs(u?.sub));
     setHistory(loadHistory(u?.sub));
   };
-
-  useEffect(() => {
-    if (user || !googleClientId || !gisBtnRef.current) return;
-    let cancelled = false;
-    loadGis()
-      .then(() => {
-        if (cancelled || !gisBtnRef.current) return;
-        gisBtnRef.current.innerHTML = "";
-        (window as any).google.accounts.id.initialize({
-          client_id: googleClientId,
-          callback: (resp: any) => {
-            const u = toGoogleUser(decodeJwt(String(resp?.credential ?? "")) ?? {});
-            if (u) applyUser(u);
-          },
-        });
-        (window as any).google.accounts.id.renderButton(gisBtnRef.current, {
-          theme: "outline",
-          size: "medium",
-          text: "signin_with",
-          shape: "rectangular",
-        });
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
   const [compareName, setCompareName] = useState("");
   const [compareResult, setCompareResult] = useState<any>(null);
   const [compareBusy, setCompareBusy] = useState(false);
@@ -615,7 +586,18 @@ export default function App() {
   if (showLanding) {
     return (
       <div className="min-h-screen bg-[#0b1120] text-slate-100">
-        <LandingPage t={t} lang={lang} onEnter={enterApp} />
+        <LandingPage
+          t={t}
+          lang={lang}
+          onEnter={enterApp}
+          user={user}
+          googleClientId={googleClientId}
+          onLogin={applyUser}
+          onLogout={() => {
+            googleLogout();
+            applyUser(null);
+          }}
+        />
       </div>
     );
   }
@@ -825,30 +807,16 @@ export default function App() {
 
             {googleClientId !== "" &&
               (user ? (
-                <div className="flex items-center gap-2 rounded border border-slate-700 bg-slate-900 py-1 pl-1 pr-2">
-                  {user.picture ? (
-                    <img src={user.picture} alt="" referrerPolicy="no-referrer" className="h-6 w-6 rounded-full" />
-                  ) : (
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-500 text-[11px] font-bold text-slate-950">
-                      {(user.name || user.email || "?").slice(0, 1).toUpperCase()}
-                    </span>
-                  )}
-                  <span className="hidden max-w-[120px] truncate text-xs text-slate-200 xl:inline">{user.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      googleLogout();
-                      applyUser(null);
-                    }}
-                    title={t.logoutBtn}
-                    aria-label={t.logoutBtn}
-                    className="rounded p-1 text-slate-400 hover:text-white transition-colors"
-                  >
-                    <LogOut size={13} />
-                  </button>
-                </div>
+                <UserChip
+                  user={user}
+                  logoutLabel={t.logoutBtn}
+                  onLogout={() => {
+                    googleLogout();
+                    applyUser(null);
+                  }}
+                />
               ) : (
-                <div ref={gisBtnRef} className="gis-btn min-h-[32px]" />
+                <GisButton clientId={googleClientId} onLogin={applyUser} />
               ))}
           </div>
         </div>

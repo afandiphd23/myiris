@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import type { STR } from "../lib/i18n";
+import type { GoogleUser } from "../lib/googleAuth";
+import { GisButton, UserChip } from "./GoogleAuthArea";
 
 type T = (typeof STR)[keyof typeof STR];
 
@@ -48,10 +50,18 @@ export default function LandingPage({
   t,
   lang,
   onEnter,
+  user,
+  googleClientId,
+  onLogin,
+  onLogout,
 }: {
   t: T;
   lang: "ms" | "en";
   onEnter: (tab: "command" | "flights" | "corridors") => void;
+  user: GoogleUser | null;
+  googleClientId: string;
+  onLogin: (u: GoogleUser) => void;
+  onLogout: () => void;
 }) {
   const [health, setHealth] = useState<any>(null);
   useEffect(() => {
@@ -170,6 +180,15 @@ export default function LandingPage({
             drfendiameen@gmail.com
           </a>
         </div>
+        {googleClientId !== "" && (
+          <div className="landing-anim landing-anim-5 mt-3 flex items-center justify-center">
+            {user ? (
+              <UserChip user={user} logoutLabel={t.logoutBtn} onLogout={onLogout} light />
+            ) : (
+              <GisButton clientId={googleClientId} onLogin={onLogin} />
+            )}
+          </div>
+        )}
         <p className="landing-anim landing-anim-5 mt-2 flex items-center justify-center gap-2 font-mono text-xs text-slate-400">
           <span className={`inline-block h-2 w-2 rounded-full ${health ? "landing-pulse bg-emerald-400" : "bg-slate-600"}`} />
           {health
