@@ -17,7 +17,7 @@ export type AgentId = "geospatial" | "maritime" | "aviation" | "disaster" | "inf
 
 export async function runAgent(
   id: AgentId,
-  ctx: { lat: number; lon: number; label: string; weather?: any; quakes?: any; adsb?: any; marine?: any; airQuality?: any }
+  ctx: { lat: number; lon: number; label: string; weather?: any; quakes?: any; adsb?: any; marine?: any; airQuality?: any; flights?: any }
 ): Promise<AgentFinding> {
   const L: Record<AgentId, () => AgentFinding> = {
     geospatial: () => ({
@@ -60,17 +60,24 @@ export async function runAgent(
         evidence: marineEv,
       };
     },
-    aviation: () => ({
-      agent: "Ejen Perisikan Penerbangan",
-      summary: ctx.adsb?.live ? `${ctx.adsb.count} jejak ADS-B dikesan dalam kotak Malaysia.` : "Data ADS-B TIADA (outage/had kadar) — bukan sifar trafik.",
-      observations: ctx.adsb?.live
-        ? [`${ctx.adsb.count} isyarat ADS-B awam dalam sektor Malaysia.`, "Sahkan status lapangan terbang melalui CAAM/pengendali lapangan terbang."]
-        : ["OpenSky tidak dapat dicapai; jangan papar trafik sifar sebagai fakta."],
-      sources: [{ name: "OpenSky (ADS-B awam)", url: "https://opensky-network.org/" }, { name: "CAAM", url: "https://www.caam.gov.my/" }],
-      confidence: ctx.adsb?.live ? "sederhana" : "rendah",
-      limitations: ["Liputan ADS-B sukarela; pesawat tanpa ADS-B tidak kelihatan."],
-      evidence: ctx.adsb?.live ? [ev(`${ctx.adsb.count} jejak ADS-B`, "OpenSky", "https://opensky-network.org/")] : [],
-    }),
+    aviation: () => {
+      const boards: any[] = ctx.flights?.boards ?? [];
+      const busy = boards.filter((b) => b.count > 0).slice(0, 3);
+      const busyLine = busy.length
+        ? `Tersibuk radius 80km: ${busy.map((b) => `${b.name} (${b.count})`).join(", ")}.`
+        : "Tiada trafik dalam radius 80km airport utama buat masa ini.";
+      return {
+        agent: "Ejen Perisikan Penerbangan",
+        summary: ctx.adsb?.live ? `${ctx.adsb.count} jejak ADS-B dikesan dalam kotak Malaysia. ${busyLine}` : "Data ADS-B TIADA (outage/had kadar) — bukan sifar trafik.",
+        observations: ctx.adsb?.live
+          ? [`${ctx.adsb.count} isyarat ADS-B awam dalam sektor Malaysia.`, busyLine, "Sahkan status lapangan terbang melalui CAAM/pengendali lapangan terbang."]
+          : ["OpenSky tidak dapat dicapai; jangan papar trafik sifar sebagai fakta."],
+        sources: [{ name: "OpenSky (ADS-B awam)", url: "https://opensky-network.org/" }, { name: "CAAM", url: "https://www.caam.gov.my/" }],
+        confidence: ctx.adsb?.live ? "sederhana" : "rendah",
+        limitations: ["Liputan ADS-B sukarela; pesawat tanpa ADS-B tidak kelihatan.", "Papan airport = trafik berhampiran, bukan jadual berlepas/ketibaan."],
+        evidence: ctx.adsb?.live ? [ev(`${ctx.adsb.count} jejak ADS-B`, "OpenSky", "https://opensky-network.org/")] : [],
+      };
+    },
     disaster: () => {
       const disEv: Evidence[] = [];
       if (ctx.quakes?.live && ctx.quakes.count > 0) {

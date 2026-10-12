@@ -1,6 +1,7 @@
 // IRIS Malaysia V2.0 — enjin data masa nyata (sumber sahih sahaja).
 // Peraturan: jangan reka endpoint API. Setiap sumber dilabel live/model/pautan-rasmi.
 import { computeIPU, parseTideSeries, ugm3ToPpm } from "./ipu.js";
+import { KEY_LOCATIONS, haversineKm } from "./geofence.js";
 
 export interface SourceStatus {
   id: string; name: string; kind: "live" | "model" | "portal";
@@ -209,4 +210,66 @@ export async function getAdsb(lamin = 0.8, lamax = 7.7, lomin = 99.3, lomax = 11
     setHealth({ id: "opensky", name: "OpenSky ADS-B (live, had kadar)", kind: "live", url: "https://opensky-network.org/", lastOk: null, lastError: String(e?.message ?? e), freshSec: null });
     return { live: false as const, count: 0, states: [], error: "OpenSky tidak dapat dicapai (had kadar/outage). Data ADS-B dilabel TIADA — bukan sifar trafik." };
   }
+}
+
+// 6) Papan penerbangan: jejak ADS-B dikelompokkan ke lapangan terbang utama Malaysia.
+// Setiap pesawat diserahkan kepada airport TERDEKAT dalam radius (laluan atas/jelajah di luar
+// radius dilabel en-route). BUKAN jadual berlepas/ketibaan syarikat — itu kekal dengan operator/CAAM.
+export const FLIGHT_RADIUS_KM = 80;
+
+export interface FlightRow {
+  callsign: string; icao: string; originCountry: string;
+  lat: number | null; lon: number | null;
+  altM: number | null; velKmh: number | null; heading: number | null;
+  distKm: number;
+}
+
+export interface AirportBoard {
+  name: string; state: string; lat: number; lon: number;
+  count: number; flights: FlightRow[];
+}
+
+export function groupFlightsByAirport(states: any[], radiusKm = FLIGHT_RADIUS_KM): { boards: AirportBoard[]; enRoute: FlightRow[] } {
+  const airports = KEY_LOCATIONS.filter((k) => k.kind === "lapangan-terbang");
+  const boards: AirportBoard[] = airports.map((a) => ({ name: a.name, state: a.state, lat: a.lat, lon: a.lon, count: 0, flights: [] }));
+  const enRoute: FlightRow[] = [];
+
+  for (const s of states ?? []) {
+    if (!Number.isFinite(s?.lat) || !Number.isFinite(s?.lon)) continue;
+    let best: AirportBoard | null = null;
+    let bestDist = Infinity;
+    for (const b of boards) {
+      const d = haversineKm(s.lat, s.lon, b.lat, b.lon);
+      if (d < bestDist) { bestDist = d; best = b; }
+    }
+    const row: FlightRow = {
+      callsign: (s.callsign || s.icao || "").trim() || "N/A",
+      icao: s.icao ?? "",
+      originCountry: s.originCountry ?? "",
+      lat: s.lat, lon: s.lon,
+      altM: Number.isFinite(s.altM) ? Math.round(s.altM) : null,
+      velKmh: Number.isFinite(s.vel) ? Math.round(s.vel * 3.6) : null,
+      heading: Number.isFinite(s.heading) ? Math.round(s.heading) : null,
+      distKm: Math.round(bestDist * 10) / 10,
+    };
+    if (best && bestDist <= radiusKm) {
+      best.flights.push(row);
+      best.count++;
+    } else {
+      enRoute.push(row);
+    }
+  }
+  for (const b of boards) b.flights.sort((x, y) => x.distKm - y.distKm);
+  enRoute.sort((x, y) => x.distKm - y.distKm);
+  boards.sort((x, y) => y.count - x.count);
+  return { boards, enRoute };
+}
+
+export async function getFlightBoards() {
+  const adsb = await getAdsb();
+  if (!adsb.live) {
+    return { live: false as const, fetchedAt: new Date().toISOString(), count: 0, boards: [], enRoute: [], error: adsb.error };
+  }
+  const { boards, enRoute } = groupFlightsByAirport(adsb.states);
+  return { live: true as const, fetchedAt: new Date().toISOString(), count: adsb.count, boards, enRoute, radiusKm: FLIGHT_RADIUS_KM };
 }

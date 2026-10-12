@@ -5,6 +5,8 @@ import { getAdvisories, buildQuakeTimeline, STATE_CENTERS, searchCustomsReferenc
 import { runAgent } from "../server/lib/agents";
 import { buildSitrep, listSitreps, deleteSitrep } from "../server/lib/sitrep";
 import { computeIPU, ipuCategory, parseTideSeries, subIndex, ugm3ToPpm } from "../server/lib/ipu";
+import { groupFlightsByAirport, FLIGHT_RADIUS_KM } from "../server/lib/dataEngine";
+import { KEY_LOCATIONS } from "../server/lib/geofence";
 
 describe("Malaysia-only geofencing (spec §2 & §10)", () => {
   it("Port Klang diterima", () => expect(validateMYTarget(2.999, 101.392, "Port Klang").ok).toBe(true));
@@ -125,6 +127,28 @@ describe("Rujukan statik + ejen (peningkatan V2.0)", () => {
     expect(tide?.nextLow).toEqual({ time: "2026-10-12T06:00", heightM: -0.7 });
     expect(parseTideSeries([], [], "2026-10-12T02:00")).toBeNull();
     expect(parseTideSeries(times, [null, null, null, null, null, null, null, null], "2026-10-12T02:00")).toBeNull();
+  });
+  it("papan flights: pesawat diserah kepada airport terdekat dalam radius", () => {
+    const states = [
+      { callsign: "MAS123", icao: "abc123", originCountry: "Malaysia", lat: 2.8, lon: 101.75, altM: 3000, vel: 120, heading: 90 },
+      { callsign: "AXM456", icao: "def456", originCountry: "Malaysia", lat: 2.745, lon: 101.71, altM: 500, vel: 80, heading: 270 },
+      { callsign: "FAR999", icao: "999999", originCountry: "X", lat: 4.5, lon: 108.0, altM: 11000, vel: 250, heading: 45 },
+      { callsign: "BAD", icao: "bad", lat: null, lon: null },
+    ];
+    const { boards, enRoute } = groupFlightsByAirport(states);
+    expect(boards.length).toBe(KEY_LOCATIONS.filter((k) => k.kind === "lapangan-terbang").length);
+    const klia = boards.find((b) => b.name.includes("KLIA"));
+    expect(klia?.count).toBe(2);
+    expect(klia?.flights[0].distKm).toBeLessThanOrEqual(klia?.flights[1].distKm ?? 0); // tertib jarak
+    expect(klia?.flights[0].velKmh).toBe(Math.round(80 * 3.6));
+    expect(enRoute.map((f) => f.callsign)).toContain("FAR999"); // luar radius → en-route
+    expect(enRoute.map((f) => f.callsign)).not.toContain("BAD"); // koordinat rosak digugurkan
+    expect(FLIGHT_RADIUS_KM).toBe(80);
+  });
+  it("papan flights: tiada trafik → semua board sifar (bukan ralat)", () => {
+    const { boards, enRoute } = groupFlightsByAirport([]);
+    expect(boards.every((b) => b.count === 0 && b.flights.length === 0)).toBe(true);
+    expect(enRoute).toEqual([]);
   });
   it("rujukan kastam HS code & arkib SITREP berfungsi", () => {
     const palm = searchCustomsReference("1511");

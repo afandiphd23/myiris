@@ -1,7 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import { isInsideMalaysia, validateMYTarget, classifyZone, KEY_LOCATIONS, STATES, STRATEGIC_CORRIDORS, haversineKm } from "./lib/geofence.js";
-import { getQuakes, getWeather, getMarineWeather, getAirQuality, getAdsb, getHealth, OFFICIAL_PORTALS } from "./lib/dataEngine.js";
+import { getQuakes, getWeather, getMarineWeather, getAirQuality, getAdsb, getFlightBoards, groupFlightsByAirport, getHealth, OFFICIAL_PORTALS } from "./lib/dataEngine.js";
 import { assessRisk, verifyClaim } from "./lib/riskEngine.js";
 import { runAgent, AGENT_IDS } from "./lib/agents.js";
 import { buildSitrep, listSitreps, deleteSitrep } from "./lib/sitrep.js";
@@ -102,6 +102,17 @@ app.get("/api/adsb", async (_req, res) => {
   res.json(a);
 });
 
+// Papan penerbangan: trafik ADS-B dikelompokkan ke 9 lapangan terbang utama (radius 80km).
+// BUKAN jadual syarikat — itu kekal dengan operator lapangan terbang/CAAM.
+app.get("/api/flights", async (_req, res) => {
+  const f = await getFlightBoards();
+  audit("flights", `OpenSky live=${f.live} count=${f.count}`);
+  res.json({
+    ...f,
+    disclaimer: "Trafik ADS-B sukarela masa nyata (bukan jadual berlepas/ketibaan). Sahkan status penerbangan dengan operator/CAAM.",
+  });
+});
+
 // Analisis penuh: geofence → data langsung → 8 ejen → verifikasi → risiko telus
 app.post("/api/analyze", async (req, res) => {
   try {
@@ -124,7 +135,7 @@ app.post("/api/analyze", async (req, res) => {
       getAdsb(),
     ]);
 
-    const ctx = { lat, lon, label, weather, marine, airQuality, quakes, adsb };
+    const ctx = { lat, lon, label, weather, marine, airQuality, quakes, adsb, flights: groupFlightsByAirport(adsb.states ?? []) };
     const agents = [];
     for (const id of AGENT_IDS) agents.push(await runAgent(id, ctx));
 
@@ -314,7 +325,7 @@ app.post("/api/sitrep", async (req, res) => {
       getAdsb(),
     ]);
     const agents = [];
-    for (const id of AGENT_IDS) agents.push(await runAgent(id, { lat, lon, label, weather, marine, airQuality, quakes, adsb }));
+    for (const id of AGENT_IDS) agents.push(await runAgent(id, { lat, lon, label, weather, marine, airQuality, quakes, adsb, flights: groupFlightsByAirport(adsb.states ?? []) }));
     const evidence = agents.flatMap((a) => a.evidence);
     const ver = verifyClaim(`${label} ${assetCategory}`, evidence);
     if (!ver.ok) { res.status(422).json({ error: ver.reason }); return; }

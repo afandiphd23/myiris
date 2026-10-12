@@ -12,13 +12,14 @@ import {
   Compass,
   ShieldCheck,
   ExternalLink,
+  Plane,
 } from "lucide-react";
 import MapView from "./components/MapView";
 import { api } from "./lib/api";
 import { STR, type Lang } from "./lib/i18n";
 import "./index.css";
 
-type ActiveTab = "command" | "corridors" | "customs" | "sitreps" | "audit";
+type ActiveTab = "command" | "corridors" | "flights" | "customs" | "sitreps" | "audit";
 
 const RISK_TEXT_STYLE: Record<string, string> = {
   LOW: "text-emerald-400",
@@ -74,6 +75,11 @@ export default function App() {
   const [corridorId, setCorridorId] = useState("selat-melaka");
   const [corridorScan, setCorridorScan] = useState<any>(null);
   const [corridorBusy, setCorridorBusy] = useState(false);
+
+  // Flights board state (9 airport utama)
+  const [flights, setFlights] = useState<any>(null);
+  const [flightsBusy, setFlightsBusy] = useState(false);
+  const [flightAirport, setFlightAirport] = useState("all");
 
   // Customs & Trade state
   const [customsQ, setCustomsQ] = useState("");
@@ -148,10 +154,11 @@ export default function App() {
     if (!refreshSec) return;
     const id = setInterval(() => {
       analyzeTarget();
+      if (activeTab === "flights") loadFlights();
     }, refreshSec * 1000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshSec, lat, lon, q, asset, stateSel, scenario, customNotes]);
+  }, [refreshSec, lat, lon, q, asset, stateSel, scenario, customNotes, activeTab]);
 
   const pickLocation = (name: string, la: number, lo: number, st?: string, switchTab = true) => {
     setQ(name);
@@ -218,6 +225,19 @@ export default function App() {
       setErr(e.message);
     } finally {
       setCorridorBusy(false);
+    }
+  }
+
+  async function loadFlights() {
+    setFlightsBusy(true);
+    setErr("");
+    try {
+      const f = await api<any>("/api/flights");
+      setFlights(f);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setFlightsBusy(false);
     }
   }
 
@@ -339,6 +359,7 @@ export default function App() {
             [
               ["command", t.navCommand],
               ["corridors", t.navCorridors],
+              ["flights", t.navFlights],
               ["customs", t.navCustoms],
               ["sitreps", t.navSitreps],
               ["audit", t.navAudit],
@@ -350,6 +371,7 @@ export default function App() {
               onClick={() => {
                 setActiveTab(id);
                 if (id === "corridors" && !corridorScan) runCorridorScan(corridorId);
+                if (id === "flights" && !flights) loadFlights();
               }}
               className={`py-1 whitespace-nowrap shrink-0 transition-colors ${
                 activeTab === id
@@ -1248,6 +1270,132 @@ export default function App() {
         )}
 
         {/* ==================== TAB 3: CUSTOMS & STRATEGIC TRADE ==================== */}
+        {activeTab === "flights" && (
+          <div className="space-y-6">
+            <section className="iris-surface p-5">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                  <h2 className="flex items-center gap-2 text-lg font-bold text-white">
+                    <Plane size={18} className="text-sky-400" />
+                    {t.navFlights} — Airport Utama Malaysia
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-400">{t.flightsDesc}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    value={flightAirport}
+                    onChange={(e) => setFlightAirport(e.target.value)}
+                    className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 outline-none"
+                  >
+                    <option value="all">{t.allAirports}</option>
+                    {((flights?.boards ?? []) as any[]).map((b: any) => (
+                      <option key={b.name} value={b.name}>
+                        {b.name} ({b.count})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={loadFlights}
+                    disabled={flightsBusy}
+                    className="flex items-center gap-1.5 rounded bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50 whitespace-nowrap shrink-0"
+                  >
+                    <RefreshCw size={13} className={flightsBusy ? "animate-spin" : ""} />
+                    {t.autoRefresh}
+                  </button>
+                </div>
+              </div>
+
+              {flightsBusy && !flights ? (
+                <div className="py-12 text-center text-xs text-slate-400">Memuatkan trafik ADS-B masa nyata…</div>
+              ) : flights?.live ? (
+                <div className="mt-4 space-y-5">
+                  <p className="font-mono tabular-nums text-xs text-slate-400">
+                    <span className="text-emerald-300">{t.model}</span> · {flights.count} jejak · radius {flights.radiusKm ?? 80}km ·
+                    dikemas kini {String(flights.fetchedAt ?? "").slice(11, 19)}Z
+                  </p>
+                  {((flightAirport === "all" ? flights.boards : flights.boards.filter((b: any) => b.name === flightAirport)) as any[]).map(
+                    (b: any) => (
+                      <div key={b.name} className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h3 className="text-sm font-bold text-white">
+                            {b.name} <span className="font-normal text-slate-400">· {b.state}</span>
+                          </h3>
+                          <span className="font-mono tabular-nums text-xs text-sky-300">
+                            {b.count} trafik · {b.lat.toFixed(3)}, {b.lon.toFixed(3)}
+                          </span>
+                        </div>
+                        {b.flights.length > 0 ? (
+                          <div className="mt-3 overflow-x-auto">
+                            <table className="w-full border-collapse text-left text-xs">
+                              <thead>
+                                <tr className="border-b border-slate-800 text-slate-400">
+                                  <th className="py-2 pr-4 font-medium">Callsign</th>
+                                  <th className="px-3 py-2 font-medium">ICAO</th>
+                                  <th className="px-3 py-2 text-right font-medium">Alt (ft)</th>
+                                  <th className="px-3 py-2 text-right font-medium">Halaju (km/j)</th>
+                                  <th className="px-3 py-2 text-right font-medium">Arah (°)</th>
+                                  <th className="py-2 pl-4 text-right font-medium">Jarak (km)</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/70">
+                                {b.flights.slice(0, 25).map((f: any) => (
+                                  <tr key={f.icao || f.callsign} className="hover:bg-slate-900/60">
+                                    <td className="py-2 pr-4 font-mono font-semibold text-white">{f.callsign}</td>
+                                    <td className="px-3 py-2 font-mono uppercase text-slate-400">{f.icao}</td>
+                                    <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-200">
+                                      {f.altM != null ? Math.round(f.altM * 3.28084).toLocaleString("en-US") : "—"}
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-200">
+                                      {f.velKmh ?? "—"}
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-200">
+                                      {f.heading ?? "—"}
+                                    </td>
+                                    <td className="py-2 pl-4 text-right font-mono tabular-nums text-emerald-300">{f.distKm}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            {b.flights.length > 25 && (
+                              <p className="mt-1 text-[11px] text-slate-500">
+                                Papar 25 daripada {b.flights.length} trafik terdekat.
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-xs text-slate-500">{t.noFlights}</p>
+                        )}
+                      </div>
+                    )
+                  )}
+                  {(flights.enRoute ?? []).length > 0 && flightAirport === "all" && (
+                    <p className="font-mono tabular-nums text-[11px] text-slate-500">
+                      {t.enRoute}: {(flights.enRoute as any[]).length} jejak di luar radius airport (jelajah/laluan atas).
+                    </p>
+                  )}
+                  <p className="text-[11px] text-slate-500">
+                    Trafik ADS-B sukarela masa nyata — bukan jadual berlepas/ketibaan. Sahkan status penerbangan dengan
+                    operator/CAAM.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-xs text-amber-200">
+                  <p className="font-semibold">Data ADS-B TIADA (OpenSky had kadar/outage) — bukan sifar trafik.</p>
+                  <button
+                    type="button"
+                    onClick={loadFlights}
+                    disabled={flightsBusy}
+                    className="mt-2 rounded border border-amber-500/40 px-3 py-1.5 text-[11px] hover:bg-amber-500/10 disabled:opacity-50"
+                  >
+                    Cuba semula
+                  </button>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+
         {activeTab === "customs" && (
           <div className="space-y-6">
             <section className="iris-surface p-5">
