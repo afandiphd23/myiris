@@ -4,6 +4,7 @@ import { assessRisk, verifyClaim } from "../server/lib/riskEngine";
 import { getAdvisories, buildQuakeTimeline, STATE_CENTERS, searchCustomsReference } from "../server/lib/reference";
 import { runAgent } from "../server/lib/agents";
 import { buildSitrep, listSitreps, deleteSitrep } from "../server/lib/sitrep";
+import { computeIPU, ipuCategory, parseTideSeries, subIndex, ugm3ToPpm } from "../server/lib/ipu";
 
 describe("Malaysia-only geofencing (spec §2 & §10)", () => {
   it("Port Klang diterima", () => expect(validateMYTarget(2.999, 101.392, "Port Klang").ok).toBe(true));
@@ -86,6 +87,44 @@ describe("Rujukan statik + ejen (peningkatan V2.0)", () => {
     const dist = haversineKm(2.999, 101.392, 3.139, 101.687); // Port Klang ke KL
     expect(dist).toBeGreaterThan(25);
     expect(dist).toBeLessThan(50);
+  });
+  it("IPU: PM2.5 mengikut jadual JAS (sempadan jalur tepat)", () => {
+    expect(computeIPU({ pm10_24h: null, pm25_24h: 12.0, o3_8h_ppm: null, o3_1h_ppm: null, no2_1h_ppm: null, so2_1h_ppm: null, co_8h_ppm: null }).ipu).toBe(50);
+    expect(computeIPU({ pm10_24h: null, pm25_24h: 75.5, o3_8h_ppm: null, o3_1h_ppm: null, no2_1h_ppm: null, so2_1h_ppm: null, co_8h_ppm: null }).ipu).toBe(100);
+    const haze = computeIPU({ pm10_24h: 200, pm25_24h: 160, o3_8h_ppm: 0.05, o3_1h_ppm: 0.1, no2_1h_ppm: 0.03, so2_1h_ppm: 0.02, co_8h_ppm: 3 });
+    expect(haze.ipu).toBeGreaterThanOrEqual(201); // PM2.5 160 → jalur 201–300
+    expect(haze.dominant).toContain("PM2.5");
+    expect(haze.categoryMs).toBe("Sangat Tidak Sihat");
+  });
+  it("IPU = MAX sub-indeks (bukan purata) + kategori betul", () => {
+    // PM10 bersih tetapi O3 tinggi → O3 mesti menang
+    const r = computeIPU({ pm10_24h: 20, pm25_24h: 8, o3_8h_ppm: 0.09, o3_1h_ppm: null, no2_1h_ppm: null, so2_1h_ppm: null, co_8h_ppm: null });
+    expect(r.dominant).toContain("O3");
+    expect(r.ipu).toBeGreaterThan(100);
+    expect(ipuCategory(45).ms).toBe("Baik");
+    expect(ipuCategory(75).ms).toBe("Sederhana");
+    expect(ipuCategory(150).ms).toBe("Tidak Sihat");
+    expect(ipuCategory(350).ms).toBe("Berbahaya");
+    expect(ipuCategory(null).ms).toBe("TIADA data");
+  });
+  it("IPU: penukaran unit gas + tiada data → selamat", () => {
+    expect(ugm3ToPpm(100, "o3")).toBeCloseTo(0.0509, 3); // 100 µg/m³ O3 ≈ 0.051 ppm
+    expect(ugm3ToPpm(1146, "co")).toBeCloseTo(1.0, 1); // ~1 ppm CO
+    expect(subIndex(null as any, [[0, 54, 0, 50]])).toBeNull();
+    const empty = computeIPU({ pm10_24h: null, pm25_24h: null, o3_8h_ppm: null, o3_1h_ppm: null, no2_1h_ppm: null, so2_1h_ppm: null, co_8h_ppm: null });
+    expect(empty.live).toBe(false);
+    expect(empty.ipu).toBeNull();
+  });
+  it("pasang surut: kesan trend + pasang/surut penuh daripada siri model", () => {
+    const times = ["2026-10-12T00:00", "2026-10-12T01:00", "2026-10-12T02:00", "2026-10-12T03:00", "2026-10-12T04:00", "2026-10-12T05:00", "2026-10-12T06:00", "2026-10-12T07:00"];
+    const heights = [-1.0, -0.2, 0.8, 1.2, 0.9, 0.1, -0.7, -0.5];
+    const tide = parseTideSeries(times, heights, "2026-10-12T02:00");
+    expect(tide?.currentM).toBe(0.8);
+    expect(tide?.trend).toBe("menaik");
+    expect(tide?.nextHigh).toEqual({ time: "2026-10-12T03:00", heightM: 1.2 });
+    expect(tide?.nextLow).toEqual({ time: "2026-10-12T06:00", heightM: -0.7 });
+    expect(parseTideSeries([], [], "2026-10-12T02:00")).toBeNull();
+    expect(parseTideSeries(times, [null, null, null, null, null, null, null, null], "2026-10-12T02:00")).toBeNull();
   });
   it("rujukan kastam HS code & arkib SITREP berfungsi", () => {
     const palm = searchCustomsReference("1511");

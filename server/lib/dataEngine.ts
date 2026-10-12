@@ -1,5 +1,6 @@
 // IRIS Malaysia V2.0 — enjin data masa nyata (sumber sahih sahaja).
 // Peraturan: jangan reka endpoint API. Setiap sumber dilabel live/model/pautan-rasmi.
+import { computeIPU, parseTideSeries, ugm3ToPpm } from "./ipu.js";
 
 export interface SourceStatus {
   id: string; name: string; kind: "live" | "model" | "portal";
@@ -99,15 +100,22 @@ export async function getWeather(lat: number, lon: number) {
   }
 }
 
-// 3) Maritim & Ombak (Open-Meteo Marine API, model, live)
+// 3) Maritim, Ombak & Pasang Surut (Open-Meteo Marine API, model, live)
+// Paras laut = sea_level_height_msl (termasuk pasang surut astronomi, datum MSL global — BUKAN LAT
+// carta nautika; ketepatan terhad berhampiran pantai; tidak sesuai untuk navigasi).
 export async function getMarineWeather(lat: number, lon: number) {
-  const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&current=wave_height,wave_direction,wave_period,swell_wave_height&hourly=wave_height&timezone=Asia%2FKuala_Lumpur&forecast_days=2`;
+  const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&current=wave_height,wave_direction,wave_period,swell_wave_height,sea_level_height_msl&hourly=wave_height,sea_level_height_msl&timezone=Asia%2FKuala_Lumpur&forecast_days=2`;
   try {
     const data = await cached(`marine-${lat.toFixed(2)}-${lon.toFixed(2)}`, 900, () => fetchJson(url, 8000)) as any;
     const waveHeight = data?.current?.wave_height ?? null;
     const wavePeriod = data?.current?.wave_period ?? null;
     const waveDirection = data?.current?.wave_direction ?? null;
     const maxWave24h = Math.max(0, ...((data?.hourly?.wave_height ?? []).filter((x: any) => typeof x === "number").slice(0, 24)));
+    const tide = parseTideSeries(
+      data?.hourly?.time ?? [],
+      data?.hourly?.sea_level_height_msl ?? [],
+      data?.current?.time ?? ""
+    );
     setHealth({ id: "openmeteo-marine", name: "Open-Meteo Marine (model, live)", kind: "model", url: "https://open-meteo.com/en/docs/marine-weather-api", lastOk: new Date().toISOString(), lastError: null, freshSec: 900 });
     return {
       live: waveHeight != null,
@@ -115,34 +123,67 @@ export async function getMarineWeather(lat: number, lon: number) {
       wavePeriodS: wavePeriod,
       waveDirectionDeg: waveDirection,
       maxWave24hM: maxWave24h || waveHeight || 0,
-      disclaimer: "Model ombak maritim Open-Meteo. Rujuk Notis Pelayaran Jabatan Laut Malaysia & METMalaysia.",
+      tide,
+      tideDatum: "MSL global (model) — bukan LAT carta nautika; anggaran kasar berhampiran pantai.",
+      disclaimer: "Model ombak & paras laut Open-Meteo. Rujuk Notis Pelayaran Jabatan Laut Malaysia & jadual pasang surut rasmi.",
     };
   } catch (e: any) {
     setHealth({ id: "openmeteo-marine", name: "Open-Meteo Marine (model, live)", kind: "model", url: "https://open-meteo.com/en/docs/marine-weather-api", lastOk: null, lastError: String(e?.message ?? e), freshSec: null });
-    return { live: false as const, waveHeightM: null, wavePeriodS: null, waveDirectionDeg: null, maxWave24hM: 0, error: String(e?.message ?? e) };
+    return { live: false as const, waveHeightM: null, wavePeriodS: null, waveDirectionDeg: null, maxWave24hM: 0, tide: null, error: String(e?.message ?? e) };
   }
 }
 
-// 4) Kualiti Udara & Jerebu (Open-Meteo Air Quality API, model, live)
+// Purata ke belakang (purata N jam terakhir sehingga indeks kini) untuk pengiraan IPU.
+function avgPast(values: Array<number | null> | undefined, endIdx: number, n: number): number | null {
+  if (!values?.length || endIdx < 0) return null;
+  const slice = values.slice(Math.max(0, endIdx - n + 1), endIdx + 1).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  if (!slice.length) return null;
+  return Math.round((slice.reduce((a, b) => a + b, 0) / slice.length) * 10) / 10;
+}
+
+// 4) Kualiti Udara, Jerebu & IPU (Open-Meteo Air Quality API, model, live)
+// IPU dikira gaya JAS (IPU = MAX sub-indeks; purata 24j PM, 8j O3/CO, 1j NO2/SO2)
+// daripada siri jam model — anggaran SAHAJA; IPU rasmi kekal di JAS APIMS.
 export async function getAirQuality(lat: number, lon: number) {
-  const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide&timezone=Asia%2FKuala_Lumpur`;
+  const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone&hourly=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone&timezone=Asia%2FKuala_Lumpur&past_days=1&forecast_days=1`;
   try {
     const data = await cached(`aq-${lat.toFixed(2)}-${lon.toFixed(2)}`, 900, () => fetchJson(url, 8000)) as any;
     const aqi = data?.current?.us_aqi ?? null;
     const pm25 = data?.current?.pm2_5 ?? null;
     const pm10 = data?.current?.pm10 ?? null;
+    const hourly = data?.hourly ?? {};
+    const times: string[] = hourly.time ?? [];
+    let endIdx = -1;
+    const nowT = data?.current?.time ?? "";
+    for (let i = 0; i < times.length; i++) if (times[i] <= nowT) endIdx = i;
+
+    const pm10_24h = avgPast(hourly.pm10, endIdx, 24);
+    const pm25_24h = avgPast(hourly.pm2_5, endIdx, 24);
+    const o3_8h = avgPast(hourly.ozone, endIdx, 8);
+    const co_8h = avgPast(hourly.carbon_monoxide, endIdx, 8);
+    const ipu = computeIPU({
+      pm10_24h,
+      pm25_24h,
+      o3_8h_ppm: ugm3ToPpm(o3_8h, "o3"),
+      o3_1h_ppm: ugm3ToPpm(data?.current?.ozone ?? null, "o3"),
+      no2_1h_ppm: ugm3ToPpm(data?.current?.nitrogen_dioxide ?? null, "no2"),
+      so2_1h_ppm: ugm3ToPpm(data?.current?.sulphur_dioxide ?? null, "so2"),
+      co_8h_ppm: ugm3ToPpm(co_8h, "co"),
+    });
     setHealth({ id: "openmeteo-aq", name: "Open-Meteo Air Quality (model, live)", kind: "model", url: "https://open-meteo.com/en/docs/air-quality-api", lastOk: new Date().toISOString(), lastError: null, freshSec: 900 });
     return {
       live: aqi != null || pm25 != null,
       aqi,
       pm25,
       pm10,
+      averages: { pm10_24h, pm25_24h, o3_8h_ugm3: o3_8h, co_8h_ugm3: co_8h },
+      ipu,
       apimsUrl: "https://apims.doe.gov.my/",
-      disclaimer: "Model kualiti udara (PM2.5/PM10/AQI). Sahkan bacaan rasmi IPU melalui portal JAS APIMS.",
+      disclaimer: "Model kualiti udara + anggaran IPU gaya JAS (bukan bacaan stesen CAQM). Sahkan IPU rasmi melalui portal JAS APIMS.",
     };
   } catch (e: any) {
     setHealth({ id: "openmeteo-aq", name: "Open-Meteo Air Quality (model, live)", kind: "model", url: "https://open-meteo.com/en/docs/air-quality-api", lastOk: null, lastError: String(e?.message ?? e), freshSec: null });
-    return { live: false as const, aqi: null, pm25: null, pm10: null, apimsUrl: "https://apims.doe.gov.my/", error: String(e?.message ?? e) };
+    return { live: false as const, aqi: null, pm25: null, pm10: null, ipu: { ipu: null, live: false, categoryMs: "TIADA data", categoryEn: "No data", color: "slate", dominant: null, subIndices: [] }, apimsUrl: "https://apims.doe.gov.my/", error: String(e?.message ?? e) };
   }
 }
 

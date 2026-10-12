@@ -29,6 +29,17 @@ const RISK_TEXT_STYLE: Record<string, string> = {
   "INSUFFICIENT EVIDENCE": "text-slate-400",
 };
 
+const IPU_TEXT_STYLE: Record<string, string> = {
+  emerald: "text-emerald-400",
+  yellow: "text-yellow-300",
+  orange: "text-orange-400",
+  red: "text-red-400",
+  purple: "text-purple-400",
+  slate: "text-slate-400",
+};
+
+const TIDE_TREND_ARROW: Record<string, string> = { menaik: "↗", menurun: "↘", mendatar: "→" };
+
 export default function App() {
   const [lang, setLang] = useState<Lang>("ms");
   const t = STR[lang];
@@ -264,7 +275,7 @@ export default function App() {
 
   function exportCorridorCsv() {
     if (!corridorScan?.rows) return;
-    const headers = ["Name", "State", "Lat", "Lon", "Zone", "RiskStatus", "RiskScore", "TempC", "WindKmh", "PrecipProbPct", "WaveM", "AQI"];
+    const headers = ["Name", "State", "Lat", "Lon", "Zone", "RiskStatus", "RiskScore", "TempC", "WindKmh", "PrecipProbPct", "WaveM", "AQI", "IPU", "IPUCategory", "TideM", "TideTrend"];
     const lines = [
       headers.join(","),
       ...corridorScan.rows.map((r: any) =>
@@ -281,6 +292,10 @@ export default function App() {
           r.precipProb ?? "",
           r.waveM ?? "",
           r.aqi ?? "",
+          r.ipu ?? "",
+          `"${r.ipuCategory ?? ""}"`,
+          r.tideM ?? "",
+          r.tideTrend ?? "",
         ].join(",")
       ),
     ];
@@ -822,6 +837,31 @@ export default function App() {
                       <p className="mt-1 text-[11px] text-slate-400">
                         Maks 24j: {result.marine.maxWave24hM} m · Sahkan Jabatan Laut
                       </p>
+                      {result.marine.tide ? (
+                        <div className="mt-2 border-t border-slate-700/60 pt-2">
+                          <p className="text-[11px] text-slate-400">{t.tide} (MSL)</p>
+                          <p className="mt-0.5 font-mono tabular-nums text-sm font-bold text-cyan-200">
+                            {result.marine.tide.currentM} m {TIDE_TREND_ARROW[result.marine.tide.trend] ?? ""}{" "}
+                            <span className="font-normal text-slate-300">{result.marine.tide.trend}</span>
+                          </p>
+                          <p className="mt-0.5 font-mono tabular-nums text-[11px] text-slate-300">
+                            {result.marine.tide.nextHigh
+                              ? `Pasang ${result.marine.tide.nextHigh.heightM} m @ ${String(result.marine.tide.nextHigh.time).slice(11, 16)}`
+                              : ""}
+                            {result.marine.tide.nextHigh && result.marine.tide.nextLow ? " · " : ""}
+                            {result.marine.tide.nextLow
+                              ? `Surut ${result.marine.tide.nextLow.heightM} m @ ${String(result.marine.tide.nextLow.time).slice(11, 16)}`
+                              : ""}
+                          </p>
+                          <p className="mt-0.5 text-[10px] text-slate-500">
+                            Model GTSM — datum MSL global, bukan LAT. Sahkan jadual rasmi.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-[11px] text-slate-500">
+                          Tiada data pasang surut model bagi koordinat ini (daratan/liputan terhad).
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <p className="mt-2 text-xs text-slate-400">
@@ -840,18 +880,40 @@ export default function App() {
                   </div>
                   {result.airQuality?.live ? (
                     <div className="mt-2">
-                      <div className="font-mono tabular-nums text-2xl font-bold text-white">
-                        AQI {result.airQuality.aqi ?? "—"}
-                      </div>
-                      <p className="mt-1 font-mono tabular-nums text-xs text-slate-300">
-                        PM2.5: {result.airQuality.pm25 ?? "—"} µg/m³ · PM10: {result.airQuality.pm10 ?? "—"} µg/m³
-                      </p>
+                      {result.airQuality.ipu?.live ? (
+                        <>
+                          <div
+                            className={`font-mono tabular-nums text-2xl font-bold ${IPU_TEXT_STYLE[result.airQuality.ipu.color] ?? "text-white"}`}
+                          >
+                            IPU {result.airQuality.ipu.ipu} ·{" "}
+                            {lang === "ms" ? result.airQuality.ipu.categoryMs : result.airQuality.ipu.categoryEn}
+                          </div>
+                          <p className="mt-1 font-mono tabular-nums text-xs text-slate-300">
+                            Dominan: {result.airQuality.ipu.dominant ?? "—"} · US AQI {result.airQuality.aqi ?? "—"} (rujukan)
+                          </p>
+                          <p className="mt-1 font-mono tabular-nums text-[11px] text-slate-400">
+                            {(result.airQuality.ipu.subIndices ?? [])
+                              .filter((s: any) => s.value != null)
+                              .map((s: any) => `${s.pollutant}: ${s.value}`)
+                              .join(" · ")}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <div className="font-mono tabular-nums text-2xl font-bold text-white">
+                            AQI {result.airQuality.aqi ?? "—"}
+                          </div>
+                          <p className="mt-1 font-mono tabular-nums text-xs text-slate-300">
+                            PM2.5: {result.airQuality.pm25 ?? "—"} µg/m³ · PM10: {result.airQuality.pm10 ?? "—"} µg/m³
+                          </p>
+                        </>
+                      )}
                       <p className="mt-1 text-[11px] text-slate-400">
-                        Rujuk portal rasmi{" "}
+                        Anggaran model gaya JAS — IPU rasmi di{" "}
                         <a href="https://apims.doe.gov.my/" target="_blank" rel="noreferrer" className="text-sky-300 underline">
                           JAS APIMS
-                        </a>{" "}
-                        untuk IPU rasmi.
+                        </a>
+                        .
                       </p>
                     </div>
                   ) : (
@@ -1126,7 +1188,8 @@ export default function App() {
                         <th className="px-3 py-2.5 text-right font-medium">Angin (km/j)</th>
                         <th className="px-3 py-2.5 text-right font-medium">Hujan (24j)</th>
                         <th className="px-3 py-2.5 text-right font-medium">Ombak (m)</th>
-                        <th className="px-3 py-2.5 text-right font-medium">US AQI</th>
+                        <th className="px-3 py-2.5 text-right font-medium">IPU</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Pasang (m)</th>
                         <th className="px-3 py-2.5 text-right font-medium">Status Risiko</th>
                         <th className="py-2.5 pl-4 text-right font-medium">Tindakan</th>
                       </tr>
@@ -1153,7 +1216,10 @@ export default function App() {
                             {r.waveM != null ? `${r.waveM} m` : "—"}
                           </td>
                           <td className="px-3 py-3 text-right font-mono tabular-nums text-slate-200">
-                            {r.aqi != null ? r.aqi : "—"}
+                            {r.ipu != null ? `${r.ipu}${r.ipuCategory ? ` ${r.ipuCategory}` : ""}` : (r.aqi != null ? `AQI ${r.aqi}` : "—")}
+                          </td>
+                          <td className="px-3 py-3 text-right font-mono tabular-nums text-cyan-200">
+                            {r.tideM != null ? `${r.tideM} m ${TIDE_TREND_ARROW[r.tideTrend] ?? ""}` : "—"}
                           </td>
                           <td className="px-3 py-3 text-right font-mono tabular-nums">
                             <span className={`font-bold ${RISK_TEXT_STYLE[r.riskStatus] ?? "text-slate-200"}`}>

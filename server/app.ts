@@ -139,14 +139,19 @@ app.post("/api/analyze", async (req, res) => {
     const baseQuakeCount = quakes.live ? quakes.count : 0;
     const waveHeight = marine.live ? (marine.waveHeightM ?? 0) : 0;
     const aqiVal = airQuality.live ? (airQuality.aqi ?? 0) : 0;
+    const ipuVal = airQuality.ipu?.live && Number.isFinite(airQuality.ipu.ipu) ? airQuality.ipu.ipu : null;
+    const tide = (marine as any)?.tide ?? null;
 
     // Sokongan simulasi senario ujian tekanan (dilabel jelas SIMULASI jika aktif)
     let wxVal = Math.min(10, basePrecip / 10);
     let wxNote = `Kebarangkalian hujan model ${weather.live ? basePrecip + "%" : "TIADA data"}`;
     let quakeVal = Math.min(10, baseQuakeCount / 2);
     let quakeNote = quakes.live ? `${quakes.count} gempa M4+ (30 hari)` : "USGS TIADA";
-    let envVal = Math.min(10, Math.max(waveHeight * 2.5, aqiVal / 25));
-    let envNote = `Ombak ${marine.live && marine.waveHeightM != null ? marine.waveHeightM + "m" : "N/A"} · AQI ${airQuality.live && airQuality.aqi != null ? airQuality.aqi : "N/A"}`;
+    // IPU (standard Malaysia) diutamakan; US AQI sebagai sandaran jika IPU tiada.
+    let envVal = Math.min(10, Math.max(waveHeight * 2.5, ipuVal != null ? ipuVal / 30 : aqiVal / 25));
+    let envNote = `Ombak ${marine.live && marine.waveHeightM != null ? marine.waveHeightM + "m" : "N/A"} · ` +
+      (ipuVal != null ? `IPU model ${ipuVal} ${airQuality.ipu.categoryMs} (${airQuality.ipu.dominant ?? "?"})` : `AQI ${airQuality.live && airQuality.aqi != null ? airQuality.aqi : "N/A"}`) +
+      (tide ? ` · Paras laut ${tide.currentM}m ${tide.trend}` : "");
     let opsVal = 3;
     let opsNote = "Asas awam; sahkan dengan operator/portal rasmi";
 
@@ -245,6 +250,8 @@ app.post("/api/batch-scan", async (req, res) => {
         const precip = weather.live ? (weather as any).precipProbMax ?? 0 : 0;
         const wave = marine.live ? (marine.waveHeightM ?? 0) : 0;
         const aqi = airQuality.live ? (airQuality.aqi ?? 0) : 0;
+        const ptIpu = (airQuality as any)?.ipu?.live ? (airQuality as any).ipu.ipu : null;
+        const ptTide = (marine as any)?.tide ?? null;
         const agents = await Promise.all(["geospatial", "maritime", "disaster"].map((id) => runAgent(id as any, { lat: pt.lat, lon: pt.lon, label: pt.name, weather, marine, airQuality, quakes, adsb })));
         const evidence = agents.flatMap((a) => a.evidence);
         const risk = assessRisk({
@@ -253,7 +260,7 @@ app.post("/api/batch-scan", async (req, res) => {
           factors: [
             { name: "Cuaca", weight: 30, value: Math.min(10, precip / 10), note: `${precip}%` },
             { name: "Seismik", weight: 25, value: Math.min(10, (quakes.live ? quakes.count : 0) / 2), note: `${quakes.count}` },
-            { name: "Laut & Udara", weight: 25, value: Math.min(10, Math.max(wave * 2.5, aqi / 25)), note: `${wave}m / AQI ${aqi}` },
+            { name: "Laut & Udara", weight: 25, value: Math.min(10, Math.max(wave * 2.5, ptIpu != null ? ptIpu / 30 : aqi / 25)), note: ptIpu != null ? `${wave}m / IPU ${ptIpu}` : `${wave}m / AQI ${aqi}` },
             { name: "Zon", weight: 20, value: zone === "tuntutan-bertindih" ? 7 : zone === "zee" ? 4 : 2, note: zone },
           ],
           evidence,
@@ -269,6 +276,10 @@ app.post("/api/batch-scan", async (req, res) => {
           precipProb: precip,
           waveM: marine.live ? marine.waveHeightM : null,
           aqi: airQuality.live ? airQuality.aqi : null,
+          ipu: ptIpu,
+          ipuCategory: (airQuality as any)?.ipu?.live ? (airQuality as any).ipu.categoryMs : null,
+          tideM: ptTide?.currentM ?? null,
+          tideTrend: ptTide?.trend ?? null,
           riskStatus: risk.status,
           riskScore: risk.score,
         };

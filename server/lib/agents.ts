@@ -34,20 +34,29 @@ export async function runAgent(
     }),
     maritime: () => {
       const hasWave = ctx.marine?.live && ctx.marine?.waveHeightM != null;
+      const tide = ctx.marine?.tide ?? null;
       const marineEv: Evidence[] = [];
       if (ctx.weather?.live) marineEv.push(ev("Bacaan model cuaca diperoleh", "Open-Meteo", "https://open-meteo.com/"));
       if (hasWave) marineEv.push(ev(`Ombak model ${ctx.marine.waveHeightM} m (tempoh ${ctx.marine.wavePeriodS ?? "?"} s)`, "Open-Meteo Marine", "https://open-meteo.com/en/docs/marine-weather-api"));
+      if (tide) marineEv.push(ev(`Paras laut model ${tide.currentM} m MSL, trend ${tide.trend}`, "Open-Meteo Marine (GTSM)", "https://open-meteo.com/en/docs/marine-weather-api"));
+      const tideObs = tide
+        ? `Pasang surut model: ${tide.currentM} m (${tide.trend}, ${tide.trendRateMPerH} m/j)` +
+          (tide.nextHigh ? ` · pasang penuh ${tide.nextHigh.heightM} m @ ${tide.nextHigh.time}` : "") +
+          (tide.nextLow ? ` · surut penuh ${tide.nextLow.heightM} m @ ${tide.nextLow.time}` : "") +
+          ` — anggaran model (datum MSL), sahkan jadual rasmi.`
+        : "Data pasang surut model tiada bagi koordinat ini (kawasan daratan/liputan model terhad).";
       return {
         agent: "Ejen Perisikan Maritim",
-        summary: `Penilaian zon maritim berhampiran ${ctx.label}${hasWave ? ` (ombak model ${ctx.marine.waveHeightM} m)` : ""}; rujuk Notis Jabatan Laut untuk arahan pelayaran.`,
+        summary: `Penilaian zon maritim berhampiran ${ctx.label}${hasWave ? ` (ombak model ${ctx.marine.waveHeightM} m)` : ""}${tide ? `; paras laut ${tide.currentM} m ${tide.trend}` : ""}; rujuk Notis Jabatan Laut untuk arahan pelayaran.`,
         observations: [
           `Semak notis pelayaran semasa Jabatan Laut Malaysia.`,
           `Cuaca model: ${ctx.weather?.live ? `angin ${ctx.weather?.current?.wind_speed_10m ?? "?"} km/j` : "tiada data cuaca — dilabel TIADA"}.`,
           hasWave ? `Keadaan laut model: ketinggian ombak ${ctx.marine.waveHeightM} m, maks 24j ${ctx.marine.maxWave24hM} m.` : "Data ombak maritim luar pesisir tidak aktif bagi koordinat daratan atau tidak dapat dicapai.",
+          tideObs,
         ],
         sources: [{ name: "Jabatan Laut Malaysia", url: "https://www.marine.gov.my/" }, { name: "Open-Meteo (model)", url: "https://open-meteo.com/" }],
         confidence: ctx.weather?.live ? "sederhana" : "rendah",
-        limitations: ["Tiada data AIS berlesen — elak dakwa trafik kapal spesifik tanpa sumber."],
+        limitations: ["Tiada data AIS berlesen — elak dakwa trafik kapal spesifik tanpa sumber.", "Paras laut model ≠ jadual pasang surut rasmi / LAT carta nautika."],
         evidence: marineEv,
       };
     },
@@ -67,7 +76,10 @@ export async function runAgent(
       if (ctx.quakes?.live && ctx.quakes.count > 0) {
         disEv.push(ev(`${ctx.quakes.count} gempa M4+ (30 hari)`, "USGS", "https://earthquake.usgs.gov/", "tinggi"));
       }
-      if (ctx.airQuality?.live && ctx.airQuality?.aqi != null) {
+      const ipu = ctx.airQuality?.ipu?.live ? ctx.airQuality.ipu : null;
+      if (ipu) {
+        disEv.push(ev(`Anggaran IPU model ${ipu.ipu} (${ipu.categoryMs}, dominan: ${ipu.dominant ?? "?"})`, "Open-Meteo Air Quality", "https://apims.doe.gov.my/"));
+      } else if (ctx.airQuality?.live && ctx.airQuality?.aqi != null) {
         disEv.push(ev(`Bacaan model kualiti udara AQI ${ctx.airQuality.aqi} (PM2.5: ${ctx.airQuality.pm25 ?? "?"} µg/m³)`, "Open-Meteo Air Quality", "https://apims.doe.gov.my/"));
       }
       return {
@@ -76,7 +88,7 @@ export async function runAgent(
         observations: [
           ctx.quakes?.live ? `${ctx.quakes.count} gempa serantau (rujuk senarai USGS).` : "USGS tidak dapat dicapai.",
           `Kebarangkalian hujan model: ${ctx.weather?.live ? `${ctx.weather.precipProbMax}%` : "tiada data"}. Untuk amaran banjir sahih rujuk InfoBanjir & METMalaysia.`,
-          ctx.airQuality?.live ? `Kualiti udara model: US AQI ${ctx.airQuality.aqi ?? "?"}, PM2.5 ${ctx.airQuality.pm25 ?? "?"} µg/m³ (sahkan IPU di JAS APIMS).` : "Bacaan kualiti udara model tidak tersedia.",
+          ctx.airQuality?.ipu?.live ? `IPU model (gaya JAS): ${ctx.airQuality.ipu.ipu} ${ctx.airQuality.ipu.categoryMs} — dominan ${ctx.airQuality.ipu.dominant ?? "?"} (sahkan IPU rasmi di JAS APIMS).` : ctx.airQuality?.live ? `Kualiti udara model: US AQI ${ctx.airQuality.aqi ?? "?"}, PM2.5 ${ctx.airQuality.pm25 ?? "?"} µg/m³ (sahkan IPU di JAS APIMS).` : "Bacaan kualiti udara model tidak tersedia.",
         ],
         sources: [
           { name: "USGS", url: "https://earthquake.usgs.gov/" },
@@ -86,7 +98,7 @@ export async function runAgent(
           { name: "JAS APIMS", url: "https://apims.doe.gov.my/" },
         ],
         confidence: "sederhana",
-        limitations: ["Model hujan ≠ amaran banjir rasmi; model AQI ≠ IPU rasmi JAS."],
+        limitations: ["Model hujan ≠ amaran banjir rasmi; anggaran IPU model ≠ IPU rasmi JAS (stesen CAQM)."],
         evidence: disEv,
       };
     },
