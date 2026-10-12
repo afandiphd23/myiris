@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Activity,
   ExternalLink,
+  Mail,
 } from "lucide-react";
 import { api } from "../lib/api";
 import type { STR } from "../lib/i18n";
@@ -160,6 +161,13 @@ export default function LandingPage({
           >
             <ExternalLink size={15} />
             {lang === "ms" ? "Versi live di Render" : "Live version on Render"}
+          </a>
+          <a
+            href="mailto:drfendiameen@gmail.com"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-6 py-3 text-sm text-slate-300 hover:border-sky-500/60 hover:text-white transition-colors"
+          >
+            <Mail size={15} />
+            drfendiameen@gmail.com
           </a>
         </div>
         <p className="landing-anim landing-anim-5 mt-2 flex items-center justify-center gap-2 font-mono text-xs text-slate-400">
