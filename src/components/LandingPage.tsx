@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ShieldCheck,
   Waves,
@@ -64,9 +64,24 @@ export default function LandingPage({
   onLogout: () => void;
 }) {
   const [health, setHealth] = useState<any>(null);
+  const [needLogin, setNeedLogin] = useState(false);
+  const authRowRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     api<any>("/api/health").then(setHealth).catch(() => {});
   }, []);
+  // Notis kunci hilang sebaik sahaja login berjaya
+  useEffect(() => {
+    if (user) setNeedLogin(false);
+  }, [user]);
+
+  const handleEnter = (tab: "command" | "flights" | "corridors") => {
+    if (user) {
+      onEnter(tab);
+      return;
+    }
+    setNeedLogin(true);
+    authRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
 
   const features: { icon: React.ReactNode; titleMs: string; titleEn: string; descMs: string; descEn: string }[] = [
     {
@@ -146,7 +161,7 @@ export default function LandingPage({
         <div className="landing-anim landing-anim-4 mt-7 flex flex-wrap items-center justify-center gap-3">
           <button
             type="button"
-            onClick={() => onEnter("command")}
+            onClick={() => handleEnter("command")}
             className="group flex items-center gap-2 rounded-lg bg-sky-500 px-6 py-3 text-sm font-bold text-slate-950 hover:bg-sky-400 transition-colors"
           >
             {lang === "ms" ? "Buka Papan Operasi" : "Open Operations Board"}
@@ -154,13 +169,18 @@ export default function LandingPage({
           </button>
           <button
             type="button"
-            onClick={() => onEnter("flights")}
+            onClick={() => handleEnter("flights")}
             className="flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-900/70 px-6 py-3 text-sm font-semibold text-slate-100 hover:border-sky-500/60 transition-colors"
           >
             <Plane size={15} />
             {t.navFlights}
           </button>
         </div>
+        {needLogin && !user && (
+          <p className="landing-anim mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-200">
+            {t.loginRequired}
+          </p>
+        )}
 
         <div className="landing-anim landing-anim-5 mt-5 flex flex-wrap items-center justify-center gap-2">
           <a
@@ -181,7 +201,10 @@ export default function LandingPage({
           </a>
         </div>
         {googleClientId !== "" && (
-          <div className="landing-anim landing-anim-5 mt-3 flex items-center justify-center">
+          <div
+            ref={authRowRef}
+            className={`landing-anim landing-anim-5 mt-3 flex items-center justify-center ${needLogin && !user ? "landing-auth-needed rounded-xl" : ""}`}
+          >
             {user ? (
               <UserChip user={user} logoutLabel={t.logoutBtn} onLogout={onLogout} light />
             ) : (
@@ -242,7 +265,7 @@ export default function LandingPage({
         <div className="mt-6 text-center">
           <button
             type="button"
-            onClick={() => onEnter("corridors")}
+            onClick={() => handleEnter("corridors")}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-600 px-6 py-3 text-sm font-semibold text-slate-100 hover:border-sky-500/60 transition-colors"
           >
             <Wind size={15} />

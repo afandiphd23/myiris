@@ -72,15 +72,20 @@ export default function App() {
     applyTheme(theme);
   }, [theme]);
 
-  // Landing page: papar pada lawatan pertama; kekal diskip selepas masuk.
+  // Landing page + kunci login: dashboard hanya selepas login Google.
+  // Pengguna tersimpan (sesi kekal) melangkau landing; tanpa sesi kembali ke landing.
   const [showLanding, setShowLanding] = useState(() => {
     try {
-      return localStorage.getItem("iris-landing") !== "masuk";
+      return localStorage.getItem("iris-landing") !== "masuk" || !loadUser();
     } catch {
       return true;
     }
   });
   const enterApp = (tab: ActiveTab = "command") => {
+    if (!user) {
+      setShowLanding(true);
+      return;
+    }
     try {
       localStorage.setItem("iris-landing", "masuk");
     } catch {
@@ -88,6 +93,11 @@ export default function App() {
     }
     setActiveTab(tab);
     setShowLanding(false);
+  };
+  const logoutToLanding = () => {
+    googleLogout();
+    applyUser(null);
+    setShowLanding(true);
   };
   const [activeTab, setActiveTab] = useState<ActiveTab>("command");
 
@@ -593,10 +603,7 @@ export default function App() {
           user={user}
           googleClientId={googleClientId}
           onLogin={applyUser}
-          onLogout={() => {
-            googleLogout();
-            applyUser(null);
-          }}
+          onLogout={logoutToLanding}
         />
       </div>
     );
@@ -807,14 +814,7 @@ export default function App() {
 
             {googleClientId !== "" &&
               (user ? (
-                <UserChip
-                  user={user}
-                  logoutLabel={t.logoutBtn}
-                  onLogout={() => {
-                    googleLogout();
-                    applyUser(null);
-                  }}
-                />
+                <UserChip user={user} logoutLabel={t.logoutBtn} onLogout={logoutToLanding} />
               ) : (
                 <GisButton clientId={googleClientId} onLogin={applyUser} />
               ))}

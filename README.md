@@ -30,7 +30,8 @@ npm run build; npm start  # produksi (Render: build cmd npm run build, start cmd
 - Fallback automatik: OpenSky → adsb.lol (komuniti) → data lewat terakhir (dilabel STALE).
 - Di Vercel: tambah kedua-dua env di Project Settings → Environment Variables, kemudian redeploy.
 
-## Login Google (pilihan)
+## Login Google (wajib untuk dashboard)
+- Landing page mengunci papan operasi di belakang login Google; log keluar kembali ke landing.
 - Client ID lalai dibina dalam app (`src/lib/googleAuth.ts`); override via `VITE_GOOGLE_CLIENT_ID` jika perlu.
 - Pastikan Authorized JavaScript origins di Google Cloud Console mengandungi URL deployment (Vercel/Render) + `http://localhost:5173`.
 - Kegemaran & sejarah diasing per pengguna Google; log keluar kembali ke data tanpa nama. Token ID hanya dibaca di klien (paparan), bukan kawalan akses pelayan.
