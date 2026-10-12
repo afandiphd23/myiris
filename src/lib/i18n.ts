@@ -80,6 +80,7 @@ export const STR = {
     themeDark: "Gelap",
     themeLight: "Cerah",
     themeSenior: "Warga Emas (teks besar, kontras tinggi)",
+    landingHome: "Laman Utama",
   },
   en: {
     title: "IRIS Malaysia",
@@ -162,6 +163,7 @@ export const STR = {
     themeDark: "Dark",
     themeLight: "Light",
     themeSenior: "Senior (large text, high contrast)",
+    landingHome: "Home",
   },
 } as const;
 export type Lang = keyof typeof STR;

@@ -1,0 +1,95 @@
+/* IRIS Malaysia — animasi landing page (CSS tulen, hormat prefers-reduced-motion). */
+
+.landing-root { min-height: 100vh; }
+
+/* Latar grid + orb */
+.landing-grid {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image: linear-gradient(rgba(56, 189, 248, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.06) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 75%);
+}
+.landing-orb { position: absolute; border-radius: 9999px; filter: blur(90px); opacity: 0.35; pointer-events: none; }
+.landing-orb-a { width: 420px; height: 420px; left: -120px; top: -120px; background: #0ea5e9; animation: landing-drift 14s ease-in-out infinite alternate; }
+.landing-orb-b { width: 360px; height: 360px; right: -100px; top: 20%; background: #8b5cf6; animation: landing-drift 18s ease-in-out infinite alternate-reverse; }
+@keyframes landing-drift {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(60px, 50px) scale(1.12); }
+}
+
+/* Radar hero */
+.landing-radar {
+  position: relative; width: 148px; height: 148px; margin: 0 auto 8px;
+  border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 9999px;
+  background: radial-gradient(circle, rgba(56,189,248,0.08) 0%, transparent 65%);
+}
+.landing-radar::before, .landing-radar::after {
+  content: ""; position: absolute; inset: 0; border-radius: 9999px;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+}
+.landing-radar::before { inset: 26px; }
+.landing-radar::after { inset: 52px; }
+.landing-radar-sweep {
+  position: absolute; inset: 0; border-radius: 9999px;
+  background: conic-gradient(from 0deg, rgba(56, 189, 248, 0.55), transparent 22%);
+  animation: landing-sweep 4s linear infinite;
+}
+@keyframes landing-sweep { to { transform: rotate(360deg); } }
+.landing-radar-dot { position: absolute; width: 7px; height: 7px; border-radius: 9999px; background: #34d399; box-shadow: 0 0 10px #34d399; animation: landing-blink 2.4s ease-in-out infinite; }
+.landing-radar-dot-1 { left: 30%; top: 34%; }
+.landing-radar-dot-2 { left: 62%; top: 58%; animation-delay: 0.8s; background: #fbbf24; box-shadow: 0 0 10px #fbbf24; }
+.landing-radar-dot-3 { left: 48%; top: 72%; animation-delay: 1.6s; }
+@keyframes landing-blink { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+
+/* Teks gradien */
+.landing-gradient {
+  background: linear-gradient(92deg, #38bdf8 10%, #34d399 55%, #a78bfa 95%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* Masuk berperingkat */
+.landing-anim { opacity: 0; animation: landing-rise 0.7s cubic-bezier(0.22, 0.9, 0.3, 1) forwards; }
+.landing-anim-1 { animation-delay: 0.05s; }
+.landing-anim-2 { animation-delay: 0.15s; }
+.landing-anim-3 { animation-delay: 0.25s; }
+.landing-anim-4 { animation-delay: 0.35s; }
+.landing-anim-5 { animation-delay: 0.45s; }
+.landing-anim-6 { animation-delay: 0.55s; }
+.landing-anim-f1 { animation-delay: 0.1s; }
+.landing-anim-f2 { animation-delay: 0.2s; }
+.landing-anim-f3 { animation-delay: 0.3s; }
+@keyframes landing-rise {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Kad ciri: angkat bila hover */
+.landing-card { transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease; }
+.landing-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 12px 32px -12px rgba(56, 189, 248, 0.35);
+}
+
+/* Denyut status */
+.landing-pulse { animation: landing-pulse 2s ease-in-out infinite; }
+@keyframes landing-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* Ticker sumber */
+.landing-ticker-wrap { overflow: hidden; }
+.landing-ticker { display: inline-flex; white-space: nowrap; animation: landing-tick 30s linear infinite; }
+@keyframes landing-tick { to { transform: translateX(-50%); } }
+
+/* Hormat pengguna yang kurang gerak */
+@media (prefers-reduced-motion: reduce) {
+  .landing-anim { opacity: 1; animation: none; }
+  .landing-orb-a, .landing-orb-b, .landing-radar-sweep, .landing-radar-dot, .landing-pulse, .landing-ticker { animation: none; }
+}
+
+/* Tema cerah/warga emas: lembutkan latar hero */
+[data-theme="light"] .landing-grid, [data-theme="senior"] .landing-grid {
+  background-image: linear-gradient(rgba(2, 132, 199, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(2, 132, 199, 0.08) 1px, transparent 1px);
+}
+[data-theme="light"] .landing-orb, [data-theme="senior"] .landing-orb { opacity: 0.18; }

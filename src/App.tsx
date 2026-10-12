@@ -16,8 +16,10 @@ import {
   Moon,
   Sun,
   Accessibility,
+  Home,
 } from "lucide-react";
 import MapView from "./components/MapView";
+import LandingPage from "./components/LandingPage";
 import { api } from "./lib/api";
 import { STR, type Lang } from "./lib/i18n";
 import { loadTheme, applyTheme, THEMES, type Theme } from "./lib/theme";
@@ -53,6 +55,24 @@ export default function App() {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  // Landing page: papar pada lawatan pertama; kekal diskip selepas masuk.
+  const [showLanding, setShowLanding] = useState(() => {
+    try {
+      return localStorage.getItem("iris-landing") !== "masuk";
+    } catch {
+      return true;
+    }
+  });
+  const enterApp = (tab: ActiveTab = "command") => {
+    try {
+      localStorage.setItem("iris-landing", "masuk");
+    } catch {
+      /* abaikan */
+    }
+    setActiveTab(tab);
+    setShowLanding(false);
+  };
   const [activeTab, setActiveTab] = useState<ActiveTab>("command");
 
   const [ref, setRef] = useState<any>(null);
@@ -364,6 +384,14 @@ export default function App() {
 
   const filteredAudit = audit.filter((a) => (auditFilter === "all" ? true : a.kind === auditFilter));
 
+  if (showLanding) {
+    return (
+      <div className="min-h-screen bg-[#0b1120] text-slate-100">
+        <LandingPage t={t} lang={lang} onEnter={enterApp} />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0b1120] text-slate-100">
       {/* Top Bar Contract: Zone 1 (Single-line Brand) — Zone 2 (5 Single-line Nav Links) — Zone 3 (1 Primary CTA) */}
@@ -378,6 +406,15 @@ export default function App() {
         >
           {t.title}
         </a>
+        <button
+          type="button"
+          onClick={() => setShowLanding(true)}
+          title={t.landingHome}
+          aria-label={t.landingHome}
+          className="rounded p-1.5 text-slate-400 hover:text-white transition-colors shrink-0"
+        >
+          <Home size={15} />
+        </button>
 
         <nav className="flex items-center gap-6 overflow-x-auto text-sm font-medium text-slate-300">
           {(
