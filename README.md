@@ -21,3 +21,8 @@ npm run build; npm start  # produksi (Render: build cmd npm run build, start cmd
 
 ## Deploy (Render)
 - Build: `npm install; npm run build` · Start: `npm start` · Env: `PORT` automatik.
+
+## Deploy (Vercel)
+- Frontend: `vite build` → `dist/` · API: `api/index.ts` (Express dikongsi dari `server/app.ts`).
+- `vercel.json` me-rewrite `/api/:path*` → `/api`. Jika nampak `Respons bukan JSON (HTTP 404) ... NOT_FOUND`,
+  maksudnya rewrite belum live — commit `vercel.json` + `api/` kemudian redeploy.
