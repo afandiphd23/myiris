@@ -230,6 +230,9 @@ app.post("/api/analyze", async (req, res) => {
       },
       adsb: {
         live: adsb.live,
+        stale: (adsb as any).stale ?? false,
+        staleSec: (adsb as any).staleSec ?? 0,
+        source: (adsb as any).source ?? "opensky",
         count: adsb.count,
         states: adsb.states ?? [],
       },

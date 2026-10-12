@@ -66,11 +66,16 @@ export async function runAgent(
       const busyLine = busy.length
         ? `Tersibuk radius 80km: ${busy.map((b) => `${b.name} (${b.count})`).join(", ")}.`
         : "Tiada trafik dalam radius 80km airport utama buat masa ini.";
+      const srcLine = ctx.adsb?.stale
+        ? `Data LEWAT ${ctx.adsb.staleSec ?? "?"}s (sumber terakhir: ${ctx.adsb.source ?? "?"}) — kedua-dua suapan gagal dihubungi.`
+        : ctx.adsb?.live
+          ? `Sumber suapan: ${ctx.adsb.source ?? "opensky"}.`
+          : "";
       return {
         agent: "Ejen Perisikan Penerbangan",
         summary: ctx.adsb?.live ? `${ctx.adsb.count} jejak ADS-B dikesan dalam kotak Malaysia. ${busyLine}` : "Data ADS-B TIADA (outage/had kadar) — bukan sifar trafik.",
         observations: ctx.adsb?.live
-          ? [`${ctx.adsb.count} isyarat ADS-B awam dalam sektor Malaysia.`, busyLine, "Sahkan status lapangan terbang melalui CAAM/pengendali lapangan terbang."]
+          ? [`${ctx.adsb.count} isyarat ADS-B awam dalam sektor Malaysia.`, busyLine, srcLine, "Sahkan status lapangan terbang melalui CAAM/pengendali lapangan terbang."].filter(Boolean)
           : ["OpenSky tidak dapat dicapai; jangan papar trafik sifar sebagai fakta."],
         sources: [{ name: "OpenSky (ADS-B awam)", url: "https://opensky-network.org/" }, { name: "CAAM", url: "https://www.caam.gov.my/" }],
         confidence: ctx.adsb?.live ? "sederhana" : "rendah",

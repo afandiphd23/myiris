@@ -5,7 +5,7 @@ import { getAdvisories, buildQuakeTimeline, STATE_CENTERS, searchCustomsReferenc
 import { runAgent } from "../server/lib/agents";
 import { buildSitrep, listSitreps, deleteSitrep } from "../server/lib/sitrep";
 import { computeIPU, ipuCategory, parseTideSeries, subIndex, ugm3ToPpm } from "../server/lib/ipu";
-import { groupFlightsByAirport, FLIGHT_RADIUS_KM } from "../server/lib/dataEngine";
+import { groupFlightsByAirport, FLIGHT_RADIUS_KM, mapAdsbLol } from "../server/lib/dataEngine";
 import { KEY_LOCATIONS } from "../server/lib/geofence";
 
 describe("Malaysia-only geofencing (spec §2 & §10)", () => {
@@ -144,6 +144,17 @@ describe("Rujukan statik + ejen (peningkatan V2.0)", () => {
     expect(enRoute.map((f) => f.callsign)).toContain("FAR999"); // luar radius → en-route
     expect(enRoute.map((f) => f.callsign)).not.toContain("BAD"); // koordinat rosak digugurkan
     expect(FLIGHT_RADIUS_KM).toBe(80);
+  });
+  it("fallback adsb.lol: unit kaki/knot dipetakan betul + data rosak digugur", () => {
+    const m = mapAdsbLol({ hex: "885303", flight: "THA426  ", lat: 6.464584, lon: 100.394044, alt_baro: 22550, gs: 466.6, track: 357.05 });
+    expect(m?.icao).toBe("885303");
+    expect(m?.callsign).toBe("THA426");
+    expect(m?.altM).toBe(Math.round(22550 * 0.3048)); // kaki → meter
+    expect(m?.vel).toBeCloseTo(466.6 * 0.514444, 3); // knot → m/s (konsisten OpenSky)
+    // alt_geom sebagai sandaran + koordinat rosak digugur
+    expect(mapAdsbLol({ hex: "x", alt_geom: 10000, gs: 200, track: 10, lat: 3, lon: 101 })?.altM).toBe(Math.round(10000 * 0.3048));
+    expect(mapAdsbLol({ hex: "x", lat: null, lon: 101 })).toBeNull();
+    expect(mapAdsbLol(null)).toBeNull();
   });
   it("papan flights: tiada trafik → semua board sifar (bukan ralat)", () => {
     const { boards, enRoute } = groupFlightsByAirport([]);

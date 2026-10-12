@@ -188,11 +188,13 @@ export async function getAirQuality(lat: number, lon: number) {
   }
 }
 
-// 5) ADS-B awam (OpenSky, live, had kadar). Gagal lembut → status outage jelas.
+// 5) ADS-B awam — OpenSky (utama) + adsb.lol (fallback) + data lewat terakhir.
+// OpenSky tanpa kunci dihadkan kuota harian; setiap kegagalan kini jatuh ke fallback,
+// kemudian ke data lewat terakhir (dilabel STALE) — bukan TIADA selagi pernah berjaya.
 export async function getAdsb(lamin = 0.8, lamax = 7.7, lomin = 99.3, lomax = 119.5) {
   const url = `https://opensky-network.org/api/states/all?lamin=${lamin}&lamax=${lamax}&lomin=${lomin}&lomax=${lomax}`;
   try {
-    const data = await cached("adsb", 120, () => fetchJson(url, 15000)) as any;
+    const data = await cached("adsb", 300, () => fetchJson(url, 15000)) as any;
     const states = (data?.states ?? []).slice(0, 120).map((s: any[]) => ({
       icao: s[0],
       callsign: (s[1] ?? "").trim(),
@@ -204,12 +206,72 @@ export async function getAdsb(lamin = 0.8, lamax = 7.7, lomin = 99.3, lomax = 11
       heading: s[10],
       time: data?.time,
     }));
-    setHealth({ id: "opensky", name: "OpenSky ADS-B (live, had kadar)", kind: "live", url: "https://opensky-network.org/", lastOk: new Date().toISOString(), lastError: null, freshSec: 120 });
-    return { live: true as const, count: states.length, states, time: data?.time };
-  } catch (e: any) {
-    setHealth({ id: "opensky", name: "OpenSky ADS-B (live, had kadar)", kind: "live", url: "https://opensky-network.org/", lastOk: null, lastError: String(e?.message ?? e), freshSec: null });
-    return { live: false as const, count: 0, states: [], error: "OpenSky tidak dapat dicapai (had kadar/outage). Data ADS-B dilabel TIADA — bukan sifar trafik." };
+    adsbLastGood = { at: Date.now(), count: states.length, states, time: data?.time, source: "opensky" };
+    setHealth({ id: "opensky", name: "OpenSky ADS-B (live, had kadar)", kind: "live", url: "https://opensky-network.org/", lastOk: new Date().toISOString(), lastError: null, freshSec: 300 });
+    return { live: true as const, stale: false as const, staleSec: 0, source: "opensky", count: states.length, states, time: data?.time };
+  } catch (e1: any) {
+    try {
+      const fb = await cached("adsb-fallback", 180, fetchAdsbLolMalaysia) as { count: number; states: any[]; time: number };
+      if (!fb.count) throw new Error("fallback kosong");
+      adsbLastGood = { at: Date.now(), count: fb.count, states: fb.states, time: fb.time, source: "adsb.lol" };
+      setHealth({ id: "adsb.lol", name: "adsb.lol ADS-B (fallback, komuniti)", kind: "live", url: "https://api.adsb.lol/", lastOk: new Date().toISOString(), lastError: null, freshSec: 180 });
+      return { live: true as const, stale: false as const, staleSec: 0, source: "adsb.lol", count: fb.count, states: fb.states, time: fb.time };
+    } catch (e2: any) {
+      if (adsbLastGood) {
+        const staleSec = Math.round((Date.now() - adsbLastGood.at) / 1000);
+        setHealth({ id: "opensky", name: "OpenSky ADS-B (live, had kadar)", kind: "live", url: "https://opensky-network.org/", lastOk: null, lastError: `Utama: ${String(e1?.message ?? e1)}; fallback: ${String(e2?.message ?? e2)} — hidang data lewat`, freshSec: null });
+        return { live: true as const, stale: true as const, staleSec, source: adsbLastGood.source, count: adsbLastGood.count, states: adsbLastGood.states, time: adsbLastGood.time };
+      }
+      setHealth({ id: "opensky", name: "OpenSky ADS-B (live, had kadar)", kind: "live", url: "https://opensky-network.org/", lastOk: null, lastError: String(e1?.message ?? e1), freshSec: null });
+      return { live: false as const, stale: false as const, staleSec: 0, source: "none", count: 0, states: [], error: "OpenSky tidak dapat dicapai (had kadar/outage). Data ADS-B dilabel TIADA — bukan sifar trafik." };
+    }
   }
+}
+
+// Data lewat terakhir yang berjaya (stale-while-revalidate dalam memori proses).
+let adsbLastGood: { at: number; count: number; states: any[]; time: any; source: string } | null = null;
+
+/** Petakan format adsb.lol → format states dalaman (sama unit dengan OpenSky: meter, m/s). */
+export function mapAdsbLol(ac: any): {
+  icao: string; callsign: string; originCountry: string;
+  lon: number; lat: number; altM: number | null; vel: number | null; heading: number | null; time: any;
+} | null {
+  if (!Number.isFinite(ac?.lat) || !Number.isFinite(ac?.lon)) return null;
+  const altFt = Number.isFinite(ac.alt_baro) ? ac.alt_baro : (Number.isFinite(ac.alt_geom) ? ac.alt_geom : null);
+  return {
+    icao: String(ac.hex ?? "").toLowerCase(),
+    callsign: String(ac.flight ?? "").trim(),
+    originCountry: "",
+    lon: ac.lon,
+    lat: ac.lat,
+    altM: altFt != null ? Math.round(altFt * 0.3048) : null, // kaki → meter
+    vel: Number.isFinite(ac.gs) ? ac.gs * 0.514444 : null, // knot → m/s
+    heading: Number.isFinite(ac.track) ? Math.round(ac.track * 10) / 10 : null,
+    time: ac.seen_pos ?? null,
+  };
+}
+
+/** Fallback komuniti: dua bulatan liputan (Semenanjung + Sabah/Sarawak), unit jarak NM. Disahkan live. */
+async function fetchAdsbLolMalaysia(): Promise<{ count: number; states: any[]; time: number }> {
+  const queries = [
+    "https://api.adsb.lol/v2/lat/3.5/lon/102.3/dist/300",
+    "https://api.adsb.lol/v2/lat/2.5/lon/113.5/dist/350",
+  ];
+  const seen = new Map<string, any>();
+  let now = Math.round(Date.now() / 1000);
+  for (const q of queries) {
+    const d = await fetchJson(q, 15000) as any;
+    if (Number.isFinite(d?.now)) now = d.now;
+    for (const ac of d?.ac ?? []) {
+      const m = mapAdsbLol(ac);
+      // Selaras dengan bbox sumber utama; selebihnya kekal en-route di papan flights.
+      if (m && m.lat >= 0.8 && m.lat <= 7.7 && m.lon >= 99.3 && m.lon <= 119.5 && !seen.has(m.icao)) {
+        seen.set(m.icao, { ...m, time: now });
+      }
+    }
+  }
+  const states = [...seen.values()].slice(0, 150);
+  return { count: states.length, states, time: now };
 }
 
 // 6) Papan penerbangan: jejak ADS-B dikelompokkan ke lapangan terbang utama Malaysia.
@@ -268,8 +330,8 @@ export function groupFlightsByAirport(states: any[], radiusKm = FLIGHT_RADIUS_KM
 export async function getFlightBoards() {
   const adsb = await getAdsb();
   if (!adsb.live) {
-    return { live: false as const, fetchedAt: new Date().toISOString(), count: 0, boards: [], enRoute: [], error: adsb.error };
+    return { live: false as const, stale: false as const, staleSec: 0, source: adsb.source, fetchedAt: new Date().toISOString(), count: 0, boards: [], enRoute: [], error: (adsb as any).error };
   }
   const { boards, enRoute } = groupFlightsByAirport(adsb.states);
-  return { live: true as const, fetchedAt: new Date().toISOString(), count: adsb.count, boards, enRoute, radiusKm: FLIGHT_RADIUS_KM };
+  return { live: true as const, stale: adsb.stale, staleSec: adsb.staleSec, source: adsb.source, fetchedAt: new Date().toISOString(), count: adsb.count, boards, enRoute, radiusKm: FLIGHT_RADIUS_KM };
 }

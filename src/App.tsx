@@ -1312,8 +1312,14 @@ export default function App() {
                 <div className="mt-4 space-y-5">
                   <p className="font-mono tabular-nums text-xs text-slate-400">
                     <span className="text-emerald-300">{t.model}</span> · {flights.count} jejak · radius {flights.radiusKm ?? 80}km ·
-                    dikemas kini {String(flights.fetchedAt ?? "").slice(11, 19)}Z
+                    sumber {flights.source ?? "opensky"} · dikemas kini {String(flights.fetchedAt ?? "").slice(11, 19)}Z
                   </p>
+                  {flights.stale && (
+                    <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 font-mono tabular-nums text-[11px] text-amber-200">
+                      Data LEWAT {flights.staleSec ?? "?"}s — OpenSky + fallback tidak dapat dihubungi. Paparan terakhir yang
+                      berjaya, bukan trafik semasa.
+                    </p>
+                  )}
                   {((flightAirport === "all" ? flights.boards : flights.boards.filter((b: any) => b.name === flightAirport)) as any[]).map(
                     (b: any) => (
                       <div key={b.name} className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
