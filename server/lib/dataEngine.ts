@@ -335,7 +335,89 @@ async function fetchAdsbLolMalaysia(): Promise<{ count: number; states: any[]; t
   return { count: states.length, states, time: now };
 }
 
-// 6) Papan penerbangan: jejak ADS-B dikelompokkan ke lapangan terbang utama Malaysia.
+// 6) Radar hujan & satelit (RainViewer, awam, tanpa kunci) — pergerakan awan/hujan animasi.
+export interface RadarFrame { time: number; path: string }
+export async function getRadarFrames() {
+  try {
+    const data = await cached("radar", 600, () => fetchJson("https://api.rainviewer.com/public/weather-maps.json", 12000)) as any;
+    const host = String(data?.host ?? "https://tilecache.rainviewer.com");
+    const past: RadarFrame[] = ((data?.radar?.past ?? []) as any[])
+      .filter((f) => Number.isFinite(f?.time) && typeof f?.path === "string")
+      .slice(-8)
+      .map((f) => ({ time: f.time, path: f.path }));
+    if (!past.length) throw new Error("tiada bingkai radar");
+    setHealth({ id: "rainviewer", name: "RainViewer Radar (awam, live)", kind: "live", url: "https://www.rainviewer.com/api.html", lastOk: new Date().toISOString(), lastError: null, freshSec: 600 });
+    return { live: true as const, host, frames: past };
+  } catch (e: any) {
+    setHealth({ id: "rainviewer", name: "RainViewer Radar (awam, live)", kind: "live", url: "https://www.rainviewer.com/api.html", lastOk: null, lastError: String(e?.message ?? e), freshSec: null });
+    return { live: false as const, host: "", frames: [] as RadarFrame[], error: String(e?.message ?? e) };
+  }
+}
+
+// 7) Berita: Kastam Malaysia + AI/teknologi via Google News RSS (awam, tanpa kunci).
+export type NewsTopic = "customs" | "ai";
+export function newsQueryFor(topic: string): string | null {
+  if (topic === "customs") return "kastam Malaysia JKDM";
+  if (topic === "ai") return "kecerdasan buatan Malaysia AI";
+  return null;
+}
+
+export interface NewsItem { title: string; link: string; source: string; published: string | null }
+
+function decodeEntities(s: string): string {
+  return s.replace(/<!\[CDATA\[(.*?)\]\]>/gs, "$1")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+}
+
+/** Parser RSS Google News → senarai ringkas (tulen, boleh diuji). */
+export function parseGoogleNewsRss(xml: string, limit = 15): NewsItem[] {
+  const items: NewsItem[] = [];
+  const blocks = xml.match(/<item>([\s\S]*?)<\/item>/g) ?? [];
+  for (const b of blocks.slice(0, limit)) {
+    const pick = (re: RegExp): string | null => {
+      const m = b.match(re);
+      return m ? decodeEntities(m[1]).trim() : null;
+    };
+    const title = pick(/<title>([\s\S]*?)<\/title>/);
+    const link = pick(/<link>([\s\S]*?)<\/link>/);
+    if (!title || !link) continue;
+    const source = pick(/<source[^>]*>([\s\S]*?)<\/source>/) ?? "";
+    let published: string | null = null;
+    const pub = pick(/<pubDate>([\s\S]*?)<\/pubDate>/);
+    if (pub) {
+      const t = new Date(pub).getTime();
+      if (Number.isFinite(t)) published = new Date(t).toISOString();
+    }
+    items.push({ title, link, source, published });
+  }
+  return items;
+}
+
+export async function getNews(topic: string) {
+  const query = newsQueryFor(topic);
+  if (!query) return { live: false as const, topic, items: [] as NewsItem[], error: "Topik tidak sah (customs|ai)." };
+  try {
+    const url = "https://news.google.com/rss/search?q=" + encodeURIComponent(query) + "&hl=ms&gl=MY&ceid=MY:ms";
+    const xml = await cached(`news-${topic}`, 1800, async () => {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 15000);
+      try {
+        const r = await fetch(url, { signal: ctl.signal, headers: { "User-Agent": "IRIS-Malaysia-V2/2.0" } });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return await r.text();
+      } finally { clearTimeout(t); }
+    }) as string;
+    const items = parseGoogleNewsRss(xml);
+    setHealth({ id: `news-${topic}`, name: `Google News RSS (${topic})`, kind: "live", url: "https://news.google.com/", lastOk: new Date().toISOString(), lastError: null, freshSec: 1800 });
+    return { live: true as const, topic, query, items, fetchedAt: new Date().toISOString() };
+  } catch (e: any) {
+    setHealth({ id: `news-${topic}`, name: `Google News RSS (${topic})`, kind: "live", url: "https://news.google.com/", lastOk: null, lastError: String(e?.message ?? e), freshSec: null });
+    return { live: false as const, topic, items: [] as NewsItem[], error: String(e?.message ?? e) };
+  }
+}
+
+// 8) Papan penerbangan: jejak ADS-B dikelompokkan ke lapangan terbang utama Malaysia.
 // Setiap pesawat diserahkan kepada airport TERDEKAT dalam radius (laluan atas/jelajah di luar
 // radius dilabel en-route). BUKAN jadual berlepas/ketibaan syarikat — itu kekal dengan operator/CAAM.
 export const FLIGHT_RADIUS_KM = 80;

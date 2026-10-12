@@ -5,7 +5,7 @@ import { getAdvisories, buildQuakeTimeline, STATE_CENTERS, searchCustomsReferenc
 import { runAgent } from "../server/lib/agents";
 import { buildSitrep, listSitreps, deleteSitrep } from "../server/lib/sitrep";
 import { computeIPU, ipuCategory, parseTideSeries, subIndex, ugm3ToPpm } from "../server/lib/ipu";
-import { groupFlightsByAirport, FLIGHT_RADIUS_KM, mapAdsbLol, getOpenskyAuthMode } from "../server/lib/dataEngine";
+import { groupFlightsByAirport, FLIGHT_RADIUS_KM, mapAdsbLol, getOpenskyAuthMode, parseGoogleNewsRss, newsQueryFor } from "../server/lib/dataEngine";
 import { resolveTheme, THEMES } from "../src/lib/theme";
 import { encodeShare, decodeShare, loadAlerts, DEFAULT_ALERTS, recordHistory } from "../src/lib/store";
 import { maybeAlert } from "../src/lib/notify";
@@ -198,6 +198,22 @@ describe("Rujukan statik + ejen (peningkatan V2.0)", () => {
     expect(m.legs).toHaveLength(2);
     expect(m.total).toBeCloseTo(m.legs[0] + m.legs[1], 1);
     expect(measurePath([[1, 1]])).toEqual({ legs: [], total: 0 });
+  });
+  it("berita: query topik sah + parser RSS (CDATA/entiti/tarikh)", () => {
+    expect(newsQueryFor("customs")).toContain("kastam");
+    expect(newsQueryFor("ai")).toContain("Malaysia");
+    expect(newsQueryFor("sukan")).toBeNull();
+    const xml = `<rss><channel>
+      <item><title><![CDATA[Kastam rampas RM1 juta &amp; tahan 2]]></title><link>https://x.test/a</link><pubDate>Fri, 09 Oct 2026 11:37:00 +0800</pubDate><source name="Sinar">Sinar Harian</source></item>
+      <item><title>Tanpa pautan</title><pubDate>Fri, 09 Oct 2026 11:37:00 +0800</pubDate></item>
+      <item><title>AI Malaysia maju</title><link>https://x.test/b</link></item>
+    </channel></rss>`;
+    const items = parseGoogleNewsRss(xml);
+    expect(items).toHaveLength(2); // tanpa pautan digugur
+    expect(items[0].title).toBe("Kastam rampas RM1 juta & tahan 2");
+    expect(items[0].source).toBe("Sinar Harian");
+    expect(items[0].published).toBe(new Date("2026-10-09T03:37:00Z").toISOString());
+    expect(items[1].published).toBeNull();
   });
   it("tema: tiga tema sah; simpanan rosak → jatuh ke gelap", () => {
     expect(THEMES).toEqual(["dark", "light", "senior"]);

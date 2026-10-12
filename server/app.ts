@@ -1,7 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import { isInsideMalaysia, validateMYTarget, classifyZone, KEY_LOCATIONS, STATES, STRATEGIC_CORRIDORS, haversineKm } from "./lib/geofence.js";
-import { getQuakes, getWeather, getMarineWeather, getAirQuality, getAdsb, getFlightBoards, groupFlightsByAirport, getHealth, OFFICIAL_PORTALS } from "./lib/dataEngine.js";
+import { getQuakes, getWeather, getMarineWeather, getAirQuality, getAdsb, getFlightBoards, groupFlightsByAirport, getRadarFrames, getNews, getHealth, OFFICIAL_PORTALS } from "./lib/dataEngine.js";
 import { assessRisk, verifyClaim } from "./lib/riskEngine.js";
 import { runAgent, AGENT_IDS } from "./lib/agents.js";
 import { buildSitrep, listSitreps, deleteSitrep } from "./lib/sitrep.js";
@@ -100,6 +100,22 @@ app.get("/api/adsb", async (_req, res) => {
   const a = await getAdsb();
   audit("adsb", `OpenSky live=${a.live} count=${a.count}`);
   res.json(a);
+});
+
+// Radar hujan RainViewer (pergerakan awan/hujan animasi di peta).
+app.get("/api/radar", async (_req, res) => {
+  const r = await getRadarFrames();
+  audit("radar", `RainViewer live=${r.live} frames=${r.frames.length}`);
+  res.json(r);
+});
+
+// Berita Kastam Malaysia + AI/teknologi (Google News RSS, cache 30 min).
+app.get("/api/news", async (req, res) => {
+  const topic = String(req.query.topic ?? "customs");
+  const n = await getNews(topic);
+  if (!n.live && (n as any).error === "Topik tidak sah (customs|ai).") { res.status(400).json(n); return; }
+  audit("news", `Topik ${topic} live=${n.live} n=${n.items.length}`);
+  res.json(n);
 });
 
 // Papan penerbangan: trafik ADS-B dikelompokkan ke 9 lapangan terbang utama (radius 80km).

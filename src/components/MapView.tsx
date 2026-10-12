@@ -10,6 +10,7 @@ type ShowState = {
   disaster: boolean;
   geofence?: boolean;
   rangeRings?: boolean;
+  radar?: boolean;
 };
 
 type Props = {
@@ -23,6 +24,8 @@ type Props = {
   show: ShowState;
   onSelectPoint?: (lat: number, lon: number) => void;
   measurePoints?: [number, number][];
+  radarHost?: string;
+  radarFrames?: { time: number; path: string }[];
 };
 
 const MY_BOUNDS = L.latLngBounds([[-3.2, 96.5], [10.5, 121.5]]);
@@ -97,6 +100,8 @@ export default function MapView({
   show,
   onSelectPoint,
   measurePoints = [],
+  radarHost = "",
+  radarFrames = [],
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -374,6 +379,43 @@ export default function MapView({
     }
   }, [mode, lat, lon, quakes, adsb, locations, floodProne, corridorPoints, show, measurePoints]);
 
+  // Radar hujan animasi (RainViewer): tindih bingkai, pusing kelegapan 900ms
+  const [radarIdx, setRadarIdx] = useState(0);
+  const radarLayers = useRef<L.TileLayer[]>([]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || mode !== "live") return;
+    radarLayers.current.forEach((l) => l.remove());
+    radarLayers.current = [];
+    setRadarIdx(0);
+    if (!show.radar || !radarHost || radarFrames.length === 0) return;
+    const layers = radarFrames.map((f) =>
+      L.tileLayer(`${radarHost}${f.path}/256/{z}/{x}/{y}/2/1_1.png`, {
+        tileSize: 256,
+        opacity: 0,
+        zIndex: 500,
+        attribution: '<a href="https://www.rainviewer.com/">RainViewer</a>',
+      }).addTo(map)
+    );
+    radarLayers.current = layers;
+    layers[layers.length - 1].setOpacity(0.65);
+    setRadarIdx(layers.length - 1);
+    const id = setInterval(() => {
+      setRadarIdx((i) => {
+        const next = (i + 1) % layers.length;
+        layers.forEach((l, k) => l.setOpacity(k === next ? 0.65 : 0));
+        return next;
+      });
+    }, 900);
+    return () => {
+      clearInterval(id);
+      layers.forEach((l) => l.remove());
+      radarLayers.current = [];
+    };
+  }, [mode, show.radar, radarHost, radarFrames]);
+
+  const radarTime = show.radar && radarFrames.length > 0 ? radarFrames[Math.min(radarIdx, radarFrames.length - 1)].time : null;
+
   // Follow active target on analyze / preset select
   const prevTarget = useRef(`${lat},${lon}`);
   useEffect(() => {
@@ -478,6 +520,12 @@ export default function MapView({
           Vektor Offline
         </button>
       </div>
+
+      {show.radar && radarTime != null && (
+        <div className="no-print absolute top-14 left-3 z-[1000] rounded border border-sky-500/40 bg-slate-900/90 px-3 py-1.5 font-mono text-[11px] text-sky-300 tabular-nums">
+          Radar {new Date(radarTime * 1000).toLocaleString("ms-MY", { hour: "2-digit", minute: "2-digit", hour12: false })} MYT · RainViewer
+        </div>
+      )}
 
       {tileError && (
         <div className="no-print absolute top-14 right-3 z-[1000] max-w-[260px] rounded border border-amber-500/50 bg-amber-950/90 px-3 py-2 text-[11px] text-amber-200">

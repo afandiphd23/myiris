@@ -25,6 +25,9 @@ import {
   Minimize,
   X,
   GitCompareArrows,
+  Newspaper,
+  Landmark,
+  Cpu,
 } from "lucide-react";
 import MapView from "./components/MapView";
 import LandingPage from "./components/LandingPage";
@@ -36,7 +39,7 @@ import { STR, type Lang } from "./lib/i18n";
 import { loadTheme, applyTheme, THEMES, type Theme } from "./lib/theme";
 import "./index.css";
 
-type ActiveTab = "command" | "corridors" | "flights" | "customs" | "sitreps" | "audit";
+type ActiveTab = "command" | "corridors" | "flights" | "customs" | "news" | "sitreps" | "audit";
 
 const RISK_TEXT_STYLE: Record<string, string> = {
   LOW: "text-emerald-400",
@@ -101,7 +104,10 @@ export default function App() {
     disaster: true,
     geofence: true,
     rangeRings: true,
+    radar: false,
   });
+  // Radar hujan RainViewer (animasi pergerakan awan/hujan)
+  const [radar, setRadar] = useState<{ host: string; frames: { time: number; path: string }[] } | null>(null);
   const [refreshSec, setRefreshSec] = useState(0);
 
   const [result, setResult] = useState<any>(null);
@@ -124,6 +130,33 @@ export default function App() {
   // Customs & Trade state
   const [customsQ, setCustomsQ] = useState("");
   const [customsData, setCustomsData] = useState<any>(null);
+
+  // Berita: Kastam MY + AI
+  const [newsCustoms, setNewsCustoms] = useState<any>(null);
+  const [newsAi, setNewsAi] = useState<any>(null);
+  const [newsBusy, setNewsBusy] = useState(false);
+
+  async function loadNews() {
+    setNewsBusy(true);
+    setErr("");
+    try {
+      const [c, a] = await Promise.all([api<any>("/api/news?topic=customs"), api<any>("/api/news?topic=ai")]);
+      setNewsCustoms(c);
+      setNewsAi(a);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setNewsBusy(false);
+    }
+  }
+
+  function timeAgo(iso: string | null): string {
+    if (!iso) return "—";
+    const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+    if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min lalu`;
+    if (s < 86400) return `${Math.round(s / 3600)} jam lalu`;
+    return `${Math.round(s / 86400)} hari lalu`;
+  }
 
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -577,6 +610,7 @@ export default function App() {
               ["corridors", t.navCorridors],
               ["flights", t.navFlights],
               ["customs", t.navCustoms],
+              ["news", t.navNews],
               ["sitreps", t.navSitreps],
               ["audit", t.navAudit],
             ] as [ActiveTab, string][]
@@ -588,6 +622,7 @@ export default function App() {
                 setActiveTab(id);
                 if (id === "corridors" && !corridorScan) runCorridorScan(corridorId);
                 if (id === "flights" && !flights) loadFlights();
+                if (id === "news" && !newsCustoms && !newsAi) loadNews();
               }}
               className={`py-1 whitespace-nowrap shrink-0 transition-colors ${
                 activeTab === id
@@ -963,13 +998,24 @@ export default function App() {
                       ["disaster", t.disaster],
                       ["geofence", t.geofence],
                       ["rangeRings", t.rangeRings],
+                      ["radar", t.radarLayer],
                     ] as const
                   ).map(([k, label]) => (
-                    <label key={k} className="flex cursor-pointer items-center gap-1.5 text-slate-300 hover:text-white whitespace-nowrap shrink-0">
+                    <label
+                      key={k}
+                      title={k === "radar" ? t.radarNote : label}
+                      className="flex cursor-pointer items-center gap-1.5 text-slate-300 hover:text-white whitespace-nowrap shrink-0"
+                    >
                       <input
                         type="checkbox"
                         checked={Boolean(show[k])}
-                        onChange={() => setShow({ ...show, [k]: !show[k] })}
+                        onChange={() => {
+                          const next = !show[k];
+                          setShow({ ...show, [k]: next });
+                          if (k === "radar" && next && !radar) {
+                            api<any>("/api/radar").then(setRadar).catch(() => {});
+                          }
+                        }}
                         className="accent-sky-400"
                       />
                       {label}
@@ -1179,6 +1225,8 @@ export default function App() {
                   show={show}
                   onSelectPoint={onMapPointClick}
                   measurePoints={measurePts}
+                  radarHost={radar?.host ?? ""}
+                  radarFrames={radar?.frames ?? []}
                 />
 
                 {/* Quick Strategic Presets Bar below map */}
@@ -2036,6 +2084,75 @@ export default function App() {
                   </button>
                 </div>
               )}
+            </section>
+          </div>
+        )}
+
+        {activeTab === "news" && (
+          <div className="space-y-6">
+            <section className="iris-surface p-5">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                  <h2 className="flex items-center gap-2 text-lg font-bold text-white">
+                    <Newspaper size={18} className="text-sky-400" />
+                    {t.navNews}
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-400">{t.newsDesc}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={loadNews}
+                  disabled={newsBusy}
+                  className="flex items-center gap-1.5 rounded bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50 whitespace-nowrap shrink-0"
+                >
+                  <RefreshCw size={13} className={newsBusy ? "animate-spin" : ""} />
+                  {t.newsUpdate}
+                </button>
+              </div>
+              <div className="mt-4 grid gap-6 lg:grid-cols-2">
+                {[
+                  { key: "customs", title: t.newsCustoms, data: newsCustoms, icon: <Landmark size={15} className="text-amber-300" /> },
+                  { key: "ai", title: t.newsAi, data: newsAi, icon: <Cpu size={15} className="text-purple-400" /> },
+                ].map((col: any) => (
+                  <div key={col.key}>
+                    <h3 className="flex items-center gap-2 text-sm font-bold text-white">
+                      {col.icon}
+                      {col.title}
+                      {col.data?.items && (
+                        <span className="font-mono text-[11px] font-normal text-slate-400">({col.data.items.length})</span>
+                      )}
+                    </h3>
+                    {newsBusy && !col.data ? (
+                      <p className="py-6 text-center text-xs text-slate-500">Memuatkan berita…</p>
+                    ) : (col.data?.items ?? []).length > 0 ? (
+                      <ul className="mt-3 space-y-2.5">
+                        {(col.data.items as any[]).map((n: any, i: number) => (
+                          <li key={i} className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+                            <a
+                              href={n.link}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs font-semibold leading-relaxed text-slate-100 hover:text-sky-300"
+                            >
+                              {n.title}
+                            </a>
+                            <p className="mt-1 font-mono text-[11px] text-slate-500 tabular-nums">
+                              {n.source || "Google News"} · {timeAgo(n.published)}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-3 rounded-lg border border-slate-800 p-4 text-xs text-slate-500">{t.newsEmpty}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="mt-4 text-[11px] text-slate-500">
+                {lang === "ms"
+                  ? "Agregat Google News RSS (cache 30 min) — pautan ke penerbit asal. Bukan pengesahan fakta IRIS."
+                  : "Google News RSS aggregate (30-min cache) — links to original publishers. Not IRIS fact verification."}
+              </p>
             </section>
           </div>
         )}
