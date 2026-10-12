@@ -76,6 +76,10 @@ export const STR = {
     forecast24h: "Unjuran Kebarangkalian Hujan & Angin (24 Jam)",
     testForeignReject: "Uji Penolakan Sasaran Asing (Singapura)",
     testClaimVerify: "Uji Sekatan Dakwaan Ketenteraan Tanpa Bukti",
+    themeLabel: "Tema paparan",
+    themeDark: "Gelap",
+    themeLight: "Cerah",
+    themeSenior: "Warga Emas (teks besar, kontras tinggi)",
   },
   en: {
     title: "IRIS Malaysia",
@@ -154,6 +158,10 @@ export const STR = {
     forecast24h: "24-Hour Precipitation Probability & Wind Forecast",
     testForeignReject: "Test Foreign Target Rejection (Singapore)",
     testClaimVerify: "Test Unverified Military Claim Block",
+    themeLabel: "Display theme",
+    themeDark: "Dark",
+    themeLight: "Light",
+    themeSenior: "Senior (large text, high contrast)",
   },
 } as const;
 export type Lang = keyof typeof STR;

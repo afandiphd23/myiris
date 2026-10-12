@@ -6,6 +6,7 @@ import { runAgent } from "../server/lib/agents";
 import { buildSitrep, listSitreps, deleteSitrep } from "../server/lib/sitrep";
 import { computeIPU, ipuCategory, parseTideSeries, subIndex, ugm3ToPpm } from "../server/lib/ipu";
 import { groupFlightsByAirport, FLIGHT_RADIUS_KM, mapAdsbLol, getOpenskyAuthMode } from "../server/lib/dataEngine";
+import { resolveTheme, THEMES } from "../src/lib/theme";
 import { KEY_LOCATIONS } from "../server/lib/geofence";
 
 describe("Malaysia-only geofencing (spec §2 & §10)", () => {
@@ -172,6 +173,14 @@ describe("Rujukan statik + ejen (peningkatan V2.0)", () => {
       if (keepSecret === undefined) delete process.env.OPENSKY_CLIENT_SECRET; else process.env.OPENSKY_CLIENT_SECRET = keepSecret;
       expect(getOpenskyAuthMode()).toBe(keepId && keepSecret ? "auth" : "anon");
     }
+  });
+  it("tema: tiga tema sah; simpanan rosak → jatuh ke gelap", () => {
+    expect(THEMES).toEqual(["dark", "light", "senior"]);
+    expect(resolveTheme("light")).toBe("light");
+    expect(resolveTheme("senior")).toBe("senior");
+    expect(resolveTheme("dark")).toBe("dark");
+    expect(resolveTheme(null)).toBe("dark");
+    expect(resolveTheme("hijau")).toBe("dark");
   });
   it("papan flights: tiada trafik → semua board sifar (bukan ralat)", () => {
     const { boards, enRoute } = groupFlightsByAirport([]);

@@ -13,10 +13,14 @@ import {
   ShieldCheck,
   ExternalLink,
   Plane,
+  Moon,
+  Sun,
+  Accessibility,
 } from "lucide-react";
 import MapView from "./components/MapView";
 import { api } from "./lib/api";
 import { STR, type Lang } from "./lib/i18n";
+import { loadTheme, applyTheme, THEMES, type Theme } from "./lib/theme";
 import "./index.css";
 
 type ActiveTab = "command" | "corridors" | "flights" | "customs" | "sitreps" | "audit";
@@ -44,6 +48,11 @@ const TIDE_TREND_ARROW: Record<string, string> = { menaik: "↗", menurun: "↘"
 export default function App() {
   const [lang, setLang] = useState<Lang>("ms");
   const t = STR[lang];
+  const [theme, setTheme] = useState<Theme>(() => loadTheme());
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
   const [activeTab, setActiveTab] = useState<ActiveTab>("command");
 
   const [ref, setRef] = useState<any>(null);
@@ -465,6 +474,28 @@ export default function App() {
               <Languages size={13} />
               {lang === "ms" ? "BM / EN" : "EN / BM"}
             </button>
+
+            <div
+              className="flex items-center gap-1 rounded border border-slate-700 bg-slate-900 p-1"
+              role="group"
+              aria-label={t.themeLabel}
+            >
+              {THEMES.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  title={id === "dark" ? t.themeDark : id === "light" ? t.themeLight : t.themeSenior}
+                  aria-label={id === "dark" ? t.themeDark : id === "light" ? t.themeLight : t.themeSenior}
+                  aria-pressed={theme === id}
+                  onClick={() => setTheme(id)}
+                  className={`rounded p-1.5 transition-colors ${
+                    theme === id ? "bg-sky-500 text-slate-950" : "text-slate-300 hover:text-white"
+                  }`}
+                >
+                  {id === "dark" ? <Moon size={13} /> : id === "light" ? <Sun size={13} /> : <Accessibility size={13} />}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
