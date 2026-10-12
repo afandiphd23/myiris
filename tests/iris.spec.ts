@@ -5,7 +5,7 @@ import { getAdvisories, buildQuakeTimeline, STATE_CENTERS, searchCustomsReferenc
 import { runAgent } from "../server/lib/agents";
 import { buildSitrep, listSitreps, deleteSitrep } from "../server/lib/sitrep";
 import { computeIPU, ipuCategory, parseTideSeries, subIndex, ugm3ToPpm } from "../server/lib/ipu";
-import { groupFlightsByAirport, FLIGHT_RADIUS_KM, mapAdsbLol } from "../server/lib/dataEngine";
+import { groupFlightsByAirport, FLIGHT_RADIUS_KM, mapAdsbLol, getOpenskyAuthMode } from "../server/lib/dataEngine";
 import { KEY_LOCATIONS } from "../server/lib/geofence";
 
 describe("Malaysia-only geofencing (spec §2 & §10)", () => {
@@ -155,6 +155,23 @@ describe("Rujukan statik + ejen (peningkatan V2.0)", () => {
     expect(mapAdsbLol({ hex: "x", alt_geom: 10000, gs: 200, track: 10, lat: 3, lon: 101 })?.altM).toBe(Math.round(10000 * 0.3048));
     expect(mapAdsbLol({ hex: "x", lat: null, lon: 101 })).toBeNull();
     expect(mapAdsbLol(null)).toBeNull();
+  });
+  it("login OpenSky: mod auth hanya bila kedua-dua env diset (rahsia tidak didedah)", () => {
+    const keepId = process.env.OPENSKY_CLIENT_ID;
+    const keepSecret = process.env.OPENSKY_CLIENT_SECRET;
+    try {
+      delete process.env.OPENSKY_CLIENT_ID;
+      delete process.env.OPENSKY_CLIENT_SECRET;
+      expect(getOpenskyAuthMode()).toBe("anon");
+      process.env.OPENSKY_CLIENT_ID = "ujian-client";
+      expect(getOpenskyAuthMode()).toBe("anon"); // secret tiada → kekal anonim
+      process.env.OPENSKY_CLIENT_SECRET = "ujian-secret";
+      expect(getOpenskyAuthMode()).toBe("auth");
+    } finally {
+      if (keepId === undefined) delete process.env.OPENSKY_CLIENT_ID; else process.env.OPENSKY_CLIENT_ID = keepId;
+      if (keepSecret === undefined) delete process.env.OPENSKY_CLIENT_SECRET; else process.env.OPENSKY_CLIENT_SECRET = keepSecret;
+      expect(getOpenskyAuthMode()).toBe(keepId && keepSecret ? "auth" : "anon");
+    }
   });
   it("papan flights: tiada trafik → semua board sifar (bukan ralat)", () => {
     const { boards, enRoute } = groupFlightsByAirport([]);

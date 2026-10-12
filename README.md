@@ -22,6 +22,12 @@ npm run build; npm start  # produksi (Render: build cmd npm run build, start cmd
 ## Deploy (Render)
 - Build: `npm install; npm run build` · Start: `npm start` · Env: `PORT` automatik.
 
+## Login OpenSky (kuota flights lebih tinggi)
+- Tanpa login: ADS-B anonim, mudah kena had kadar (TIADA sementara).
+- Dengan login: set `OPENSKY_CLIENT_ID` + `OPENSKY_CLIENT_SECRET` (akaun OpenSky → Account → API Client, aliran OAuth2 client-credentials). Token disegar automatik (30 minit); rahsia tidak dihantar ke klien.
+- Fallback automatik: OpenSky → adsb.lol (komuniti) → data lewat terakhir (dilabel STALE).
+- Di Vercel: tambah kedua-dua env di Project Settings → Environment Variables, kemudian redeploy.
+
 ## Deploy (Vercel)
 - Frontend: `vite build` → `dist/` · API: `api/index.ts` (Express dikongsi dari `server/app.ts`).
 - `vercel.json` me-rewrite `/api/:path*` → `/api`. Jika nampak `Respons bukan JSON (HTTP 404) ... NOT_FOUND`,

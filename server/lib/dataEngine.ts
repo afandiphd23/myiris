@@ -22,15 +22,59 @@ export async function cached<T>(key: string, ttlSec: number, fn: () => Promise<T
   return data;
 }
 
-async function fetchJson(url: string, timeoutMs = 12000): Promise<unknown> {
+async function fetchJson(url: string, timeoutMs = 12000, extraHeaders: Record<string, string> = {}): Promise<unknown> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const r = await fetch(url, { signal: ctl.signal, headers: { "User-Agent": "IRIS-Malaysia-V2/2.0" } });
+    const r = await fetch(url, { signal: ctl.signal, headers: { "User-Agent": "IRIS-Malaysia-V2/2.0", ...extraHeaders } });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   } finally { clearTimeout(t); }
 }
+
+// --- Login OpenSky (OAuth2 client-credentials; Basic auth dimansuhkan Mac 2026) ---
+// Daftar: akaun OpenSky → halaman Account → kad API Client → client_id + client_secret.
+// Tanpa login: akses anonim dengan had kadar rendah (mudah TIADA bila kuota habis).
+const OPENSKY_TOKEN_URL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
+const TOKEN_REFRESH_MARGIN_MS = 30_000;
+
+let openskyToken: { token: string; expiresAt: number } | null = null;
+
+/** Mod auth berdasarkan env (tidak pernah dedah rahsia ke log/klien). */
+export function getOpenskyAuthMode(): "auth" | "anon" {
+  return process.env.OPENSKY_CLIENT_ID && process.env.OPENSKY_CLIENT_SECRET ? "auth" : "anon";
+}
+
+async function getOpenskyToken(): Promise<string | null> {
+  if (getOpenskyAuthMode() !== "auth") return null;
+  if (openskyToken && Date.now() < openskyToken.expiresAt) return openskyToken.token;
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 15000);
+  try {
+    const body = new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: process.env.OPENSKY_CLIENT_ID ?? "",
+      client_secret: process.env.OPENSKY_CLIENT_SECRET ?? "",
+    });
+    const r = await fetch(OPENSKY_TOKEN_URL, {
+      signal: ctl.signal,
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "IRIS-Malaysia-V2/2.0" },
+      body,
+    });
+    if (!r.ok) { openskyToken = null; return null; }
+    const d = (await r.json()) as any;
+    if (!d?.access_token) { openskyToken = null; return null; }
+    const expiresIn = Number(d.expires_in ?? 1800) * 1000;
+    openskyToken = { token: d.access_token, expiresAt: Date.now() + expiresIn - TOKEN_REFRESH_MARGIN_MS };
+    return openskyToken.token;
+  } catch {
+    openskyToken = null;
+    return null;
+  } finally { clearTimeout(t); }
+}
+
+function invalidateOpenskyToken() { openskyToken = null; }
 
 // Portal rasmi Malaysia (pautan, bukan API — dilabel telus).
 export const OFFICIAL_PORTALS = [
@@ -193,8 +237,25 @@ export async function getAirQuality(lat: number, lon: number) {
 // kemudian ke data lewat terakhir (dilabel STALE) — bukan TIADA selagi pernah berjaya.
 export async function getAdsb(lamin = 0.8, lamax = 7.7, lomin = 99.3, lomax = 119.5) {
   const url = `https://opensky-network.org/api/states/all?lamin=${lamin}&lamax=${lamax}&lomin=${lomin}&lomax=${lomax}`;
+  const fetchStates = async (retryAuth: boolean): Promise<{ data: any; authed: boolean }> => {
+    const token = await getOpenskyToken();
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    try {
+      return { data: await fetchJson(url, 15000, headers), authed: !!token };
+    } catch (e: any) {
+      // Token mungkin luput awal: buang cache dan cuba sekali lagi dengan token baharu.
+      if (retryAuth && token && String(e?.message ?? e).includes("401")) {
+        invalidateOpenskyToken();
+        const fresh = await getOpenskyToken();
+        const retryHeaders: Record<string, string> = fresh ? { Authorization: `Bearer ${fresh}` } : {};
+        return { data: await fetchJson(url, 15000, retryHeaders), authed: !!fresh };
+      }
+      throw e;
+    }
+  };
   try {
-    const data = await cached("adsb", 300, () => fetchJson(url, 15000)) as any;
+    const { data, authed } = await cached("adsb", 300, () => fetchStates(true)) as { data: any; authed: boolean };
+    const sourceName = authed ? "opensky (auth)" : "opensky";
     const states = (data?.states ?? []).slice(0, 120).map((s: any[]) => ({
       icao: s[0],
       callsign: (s[1] ?? "").trim(),
@@ -206,9 +267,9 @@ export async function getAdsb(lamin = 0.8, lamax = 7.7, lomin = 99.3, lomax = 11
       heading: s[10],
       time: data?.time,
     }));
-    adsbLastGood = { at: Date.now(), count: states.length, states, time: data?.time, source: "opensky" };
-    setHealth({ id: "opensky", name: "OpenSky ADS-B (live, had kadar)", kind: "live", url: "https://opensky-network.org/", lastOk: new Date().toISOString(), lastError: null, freshSec: 300 });
-    return { live: true as const, stale: false as const, staleSec: 0, source: "opensky", count: states.length, states, time: data?.time };
+    adsbLastGood = { at: Date.now(), count: states.length, states, time: data?.time, source: sourceName };
+    setHealth({ id: "opensky", name: `OpenSky ADS-B (${authed ? "login, kuota tinggi" : "anonim, had kadar"})`, kind: "live", url: "https://opensky-network.org/", lastOk: new Date().toISOString(), lastError: null, freshSec: 300 });
+    return { live: true as const, stale: false as const, staleSec: 0, source: sourceName, count: states.length, states, time: data?.time };
   } catch (e1: any) {
     try {
       const fb = await cached("adsb-fallback", 180, fetchAdsbLolMalaysia) as { count: number; states: any[]; time: number };
