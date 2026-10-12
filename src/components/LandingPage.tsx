@@ -151,17 +151,17 @@ export default function LandingPage({
           </button>
         </div>
 
-        <p className="landing-anim landing-anim-5 mt-5 flex flex-wrap items-center justify-center gap-2 font-mono text-xs text-slate-400">
+        <div className="landing-anim landing-anim-5 mt-5 flex flex-wrap items-center justify-center gap-2">
           <a
             href="https://iris-xygb.onrender.com"
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 underline underline-offset-4 hover:text-sky-300 transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-900/70 px-6 py-3 text-sm font-semibold text-slate-100 hover:border-sky-500/60 transition-colors"
           >
-            <ExternalLink size={12} />
+            <ExternalLink size={15} />
             {lang === "ms" ? "Versi live di Render" : "Live version on Render"}
           </a>
-        </p>
+        </div>
         <p className="landing-anim landing-anim-5 mt-2 flex items-center justify-center gap-2 font-mono text-xs text-slate-400">
           <span className={`inline-block h-2 w-2 rounded-full ${health ? "landing-pulse bg-emerald-400" : "bg-slate-600"}`} />
           {health
