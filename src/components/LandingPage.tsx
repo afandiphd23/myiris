@@ -125,6 +125,9 @@ export default function LandingPage({
           IRIS <span className="landing-gradient">Malaysia</span>{" "}
           <span className="align-middle font-mono text-lg text-slate-400 md:text-xl">V2.0</span>
         </h1>
+        <p className="landing-anim landing-anim-2 mt-2 font-mono text-xs tracking-[0.2em] text-slate-400 uppercase md:text-sm">
+          {t.irisFull}
+        </p>
         <p className="landing-anim landing-anim-3 mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-slate-300 md:text-base">
           {t.sub} — {lang === "ms" ? "pantau cuaca, laut, udara, seismik & penerbangan setiap lokasi Malaysia dalam satu papan." : "monitor weather, sea, air, seismic & flights for every Malaysian location in one board."}
         </p>
