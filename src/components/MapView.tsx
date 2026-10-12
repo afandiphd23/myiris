@@ -22,6 +22,7 @@ type Props = {
   corridorPoints?: { name: string; lat: number; lon: number }[];
   show: ShowState;
   onSelectPoint?: (lat: number, lon: number) => void;
+  measurePoints?: [number, number][];
 };
 
 const MY_BOUNDS = L.latLngBounds([[-3.2, 96.5], [10.5, 121.5]]);
@@ -95,6 +96,7 @@ export default function MapView({
   corridorPoints = [],
   show,
   onSelectPoint,
+  measurePoints = [],
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -359,7 +361,18 @@ export default function MapView({
     L.circleMarker([lat, lon], { radius: 3.5, color: "#7c2d12", weight: 2, fillColor: "#fff", fillOpacity: 1 }).addTo(
       targetLayer
     );
-  }, [mode, lat, lon, quakes, adsb, locations, floodProne, corridorPoints, show]);
+
+    // Laluan ukuran (mod ukur): garisan kuning + penanda titik bernombor
+    if (measurePoints.length > 0) {
+      const latlngs = measurePoints.map(([la, lo]) => [la, lo] as [number, number]);
+      L.polyline(latlngs, { color: "#eab308", weight: 3, dashArray: "8 5", opacity: 0.95 }).addTo(targetLayer);
+      measurePoints.forEach(([la, lo], i) => {
+        L.marker([la, lo], { icon: dotIcon("#eab308", 13, "#713f12"), title: `Titik ukur ${i + 1}` })
+          .bindTooltip(`${i + 1}`, { direction: "center", offset: [0, 0], className: "iris-measure-label" })
+          .addTo(targetLayer);
+      });
+    }
+  }, [mode, lat, lon, quakes, adsb, locations, floodProne, corridorPoints, show, measurePoints]);
 
   // Follow active target on analyze / preset select
   const prevTarget = useRef(`${lat},${lon}`);
@@ -394,6 +407,7 @@ export default function MapView({
           corridorPoints={corridorPoints}
           show={show}
           onSelectPoint={onSelectPoint}
+          measurePoints={measurePoints}
         />
       </div>
     );

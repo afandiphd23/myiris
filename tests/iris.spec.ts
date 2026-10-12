@@ -7,6 +7,9 @@ import { buildSitrep, listSitreps, deleteSitrep } from "../server/lib/sitrep";
 import { computeIPU, ipuCategory, parseTideSeries, subIndex, ugm3ToPpm } from "../server/lib/ipu";
 import { groupFlightsByAirport, FLIGHT_RADIUS_KM, mapAdsbLol, getOpenskyAuthMode } from "../server/lib/dataEngine";
 import { resolveTheme, THEMES } from "../src/lib/theme";
+import { encodeShare, decodeShare, loadAlerts, DEFAULT_ALERTS, recordHistory } from "../src/lib/store";
+import { maybeAlert } from "../src/lib/notify";
+import { haversineKm as clientHaversineKm, measurePath } from "../src/lib/geo";
 import { KEY_LOCATIONS } from "../server/lib/geofence";
 
 describe("Malaysia-only geofencing (spec §2 & §10)", () => {
@@ -173,6 +176,28 @@ describe("Rujukan statik + ejen (peningkatan V2.0)", () => {
       if (keepSecret === undefined) delete process.env.OPENSKY_CLIENT_SECRET; else process.env.OPENSKY_CLIENT_SECRET = keepSecret;
       expect(getOpenskyAuthMode()).toBe(keepId && keepSecret ? "auth" : "anon");
     }
+  });
+  it("kongsi pautan: roundtrip + input rosak → null", () => {
+    const p = { lat: 2.999, lon: 101.392, label: "Port Klang", state: "Selangor", asset: "maritim", scenario: "live" };
+    expect(decodeShare(encodeShare(p))).toEqual(p);
+    expect(decodeShare("!!!")).toBeNull();
+    expect(decodeShare(encodeShare({ ...p, lat: NaN } as any))).toBeNull();
+  });
+  it("amaran: ambang lalai 70; bawah ambang senyap, atas ambang cetus", () => {
+    expect(loadAlerts()).toEqual(DEFAULT_ALERTS);
+    expect(maybeAlert({ risk: { score: 90, status: "HIGH" }, label: "X" })).toBe(true);
+    expect(maybeAlert({ risk: { score: 50, status: "LOW" }, label: "X" })).toBe(false);
+    expect(maybeAlert(null)).toBe(false);
+    expect(recordHistory({ label: "X", lat: 3, lon: 101, score: 10, status: "LOW", time: 1 })).toHaveLength(1);
+  });
+  it("geo klien: haversine + laluan ukuran konsisten", () => {
+    const d = clientHaversineKm(2.999, 101.392, 3.139, 101.687); // Port Klang → KL
+    expect(d).toBeGreaterThan(30);
+    expect(d).toBeLessThan(45);
+    const m = measurePath([[2.999, 101.392], [2.745, 101.71], [3.139, 101.687]]);
+    expect(m.legs).toHaveLength(2);
+    expect(m.total).toBeCloseTo(m.legs[0] + m.legs[1], 1);
+    expect(measurePath([[1, 1]])).toEqual({ legs: [], total: 0 });
   });
   it("tema: tiga tema sah; simpanan rosak → jatuh ke gelap", () => {
     expect(THEMES).toEqual(["dark", "light", "senior"]);

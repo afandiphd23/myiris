@@ -17,9 +17,20 @@ import {
   Sun,
   Accessibility,
   Home,
+  Bell,
+  Star,
+  Share2,
+  Ruler,
+  Maximize,
+  Minimize,
+  X,
+  GitCompareArrows,
 } from "lucide-react";
 import MapView from "./components/MapView";
 import LandingPage from "./components/LandingPage";
+import { loadAlerts, saveAlerts, loadFavs, saveFavs, loadHistory, recordHistory, encodeShare, decodeShare, type AlertConfig, type FavPlace, type HistoryEntry } from "./lib/store";
+import { maybeAlert, ensureNotifyPermission, playBeep } from "./lib/notify";
+import { measurePath } from "./lib/geo";
 import { api } from "./lib/api";
 import { STR, type Lang } from "./lib/i18n";
 import { loadTheme, applyTheme, THEMES, type Theme } from "./lib/theme";
@@ -117,16 +128,39 @@ export default function App() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [lastFetch, setLastFetch] = useState<number | null>(null);
+  // Amaran pintar / kegemaran & sejarah / banding / ukur / kongsi
+  const [alertCfg, setAlertCfg] = useState<AlertConfig>(() => loadAlerts());
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [favs, setFavs] = useState<FavPlace[]>(() => loadFavs());
+  const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory());
+  const [compareName, setCompareName] = useState("");
+  const [compareResult, setCompareResult] = useState<any>(null);
+  const [compareBusy, setCompareBusy] = useState(false);
+  const [measuring, setMeasuring] = useState(false);
+  const [measurePts, setMeasurePts] = useState<[number, number][]>([]);
+  const mapWrapRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [shareMsg, setShareMsg] = useState("");
   const [tick, setTick] = useState(0);
   const busyRef = useRef(false);
 
   // Initial load of reference data, health, customs, sitreps, and initial Port Klang analysis
+  // (atau lokasi daripada pautan kongsi #a=...)
   useEffect(() => {
     api<any>("/api/reference").then(setRef).catch(() => {});
     api<any>("/api/health").then(setHealth).catch(() => {});
     api<any[]>("/api/sitreps").then(setSitrepList).catch(() => {});
     api<any>("/api/customs").then(setCustomsData).catch(() => {});
-    analyzeTarget(2.999, 101.392, "Port Klang", "maritim — Port Klang", "Selangor", "live", "");
+    const m = window.location.hash.match(/#a=([A-Za-z0-9\-_]+)/);
+    const shared = m ? decodeShare(m[1]) : null;
+    if (shared) {
+      const sc = ["live", "monsoon-surge", "haze-episode", "seismic-tremor"].includes(shared.scenario) ? shared.scenario : "live";
+      setLat(shared.lat); setLon(shared.lon); setQ(shared.label);
+      setStateSel(shared.state); setAsset(shared.asset); setScenario(sc);
+      analyzeTarget(shared.lat, shared.lon, shared.label, shared.asset, shared.state, sc, "");
+    } else {
+      analyzeTarget(2.999, 101.392, "Port Klang", "maritim — Port Klang", "Selangor", "live", "");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -164,6 +198,8 @@ export default function App() {
       });
       setResult(r);
       setLastFetch(Date.now());
+      setHistory(recordHistory({ label: r.label, lat: targetLat, lon: targetLon, score: r.risk.score, status: r.risk.status, time: Date.now() }));
+      maybeAlert(r);
       const h = await api<any>("/api/health").catch(() => null);
       if (h) setHealth(h);
       const a = await api<any[]>("/api/audit").catch(() => []);
@@ -211,12 +247,130 @@ export default function App() {
   };
 
   const onMapPointClick = (cLat: number, cLon: number) => {
+    if (measuring) {
+      setMeasurePts((p) => [...p, [cLat, cLon] as [number, number]].slice(0, 20));
+      return;
+    }
     const label = `Titik Peta (${cLat.toFixed(3)}, ${cLon.toFixed(3)})`;
     setLat(cLat);
     setLon(cLon);
     setQ(label);
     analyzeTarget(cLat, cLon, label, asset, stateSel, scenario, customNotes);
   };
+
+  // Skrin penuh peta (Leaflet trackResize mengendalikan saiz semula jubin)
+  useEffect(() => {
+    const onFs = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+
+  async function toggleMapFullscreen() {
+    const el = mapWrapRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await el.requestFullscreen();
+    } catch {
+      /* abaikan */
+    }
+  }
+
+  // Tetapan amaran (persist; minta kebenaran notifikasi bila dihidupkan)
+  const updateAlerts = (patch: Partial<AlertConfig>) => {
+    const next = { ...loadAlerts(), ...patch };
+    saveAlerts(next);
+    setAlertCfg(next);
+    if (next.notify) {
+      ensureNotifyPermission().then((ok) => {
+        if (!ok) {
+          const off = { ...next, notify: false };
+          saveAlerts(off);
+          setAlertCfg(off);
+        }
+      });
+    }
+  };
+
+  const testAlert = () => {
+    playBeep();
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        new Notification("IRIS: Ujian Amaran", { body: `Ambang semasa ${alertCfg.threshold}/100`, tag: "iris-test-alert" });
+      }
+    } catch {
+      /* abaikan */
+    }
+  };
+
+  // Kegemaran
+  const isFav = favs.some((f) => Math.abs(f.lat - lat) < 1e-4 && Math.abs(f.lon - lon) < 1e-4);
+  const toggleFav = () => {
+    const next = isFav
+      ? favs.filter((f) => !(Math.abs(f.lat - lat) < 1e-4 && Math.abs(f.lon - lon) < 1e-4))
+      : [...favs, { name: q || `${lat.toFixed(3)},${lon.toFixed(3)}`, lat, lon, state: stateSel }].slice(0, 12);
+    setFavs(next);
+    saveFavs(next);
+  };
+
+  // Banding lokasi B dengan hasil semasa
+  async function runCompare() {
+    const loc = ((ref?.locations ?? []) as any[]).find((l: any) => l.name === compareName);
+    if (!loc) return;
+    setCompareBusy(true);
+    setErr("");
+    try {
+      const r = await api<any>("/api/analyze", {
+        method: "POST",
+        body: JSON.stringify({ lat: loc.lat, lon: loc.lon, label: loc.name, asset, state: loc.state, scenario: "live", notes: "" }),
+      });
+      setCompareResult(r);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setCompareBusy(false);
+    }
+  }
+
+  // Kongsi pautan + eksport CSV analisis semasa
+  async function shareAnalysis() {
+    if (!result) return;
+    const code = encodeShare({ lat, lon, label: q, state: stateSel, asset, scenario });
+    const url = `${window.location.origin}${window.location.pathname}#a=${code}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareMsg(t.shareCopied);
+    } catch {
+      setShareMsg(url);
+    }
+    setTimeout(() => setShareMsg(""), 4000);
+  }
+
+  function exportAnalysisCsv() {
+    if (!result) return;
+    const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const lines = [
+      ["Seksyen", "Medan", "Nilai"].join(","),
+      ["meta", "label", esc(result.label)].join(","),
+      ["meta", "koordinat", esc(`${result.coords?.[0]},${result.coords?.[1]}`)].join(","),
+      ["meta", "zon", esc(result.zone)].join(","),
+      ["meta", "skor", result.risk.score].join(","),
+      ["meta", "status", esc(result.risk.status)].join(","),
+      ...(result.risk.factors ?? []).map((f: any) => ["faktor", `${f.name} (${f.weight}%)`, esc(`${f.value}/10 — ${f.note}`)].join(",")),
+      ...(result.agents ?? []).map((a: any) => ["ejen", a.agent, esc(`${a.summary} [${a.confidence}]`)].join(",")),
+      ["udara", "IPU", result.airQuality?.ipu?.live ? esc(`${result.airQuality.ipu.ipu} ${result.airQuality.ipu.categoryMs}`) : "TIADA"].join(","),
+      ["laut", "ombak_m", result.marine?.waveHeightM ?? "TIADA"].join(","),
+      ["laut", "tide", result.marine?.tide ? esc(`${result.marine.tide.currentM}m ${result.marine.tide.trend}`) : "TIADA"].join(","),
+      ["seismik", "gempa_M4_30hari", result.quakes?.count ?? "TIADA"].join(","),
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `iris-analisis-${(result.label ?? "sasaran").replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase()}.csv`;
+    a.click();
+  }
+
+  const measure = measurePath(measurePts);
 
   async function genSitrep() {
     setBusy(true);
@@ -533,6 +687,65 @@ export default function App() {
                 </button>
               ))}
             </div>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setAlertOpen((v) => !v)}
+                title={t.alertsTitle}
+                aria-label={t.alertsTitle}
+                aria-expanded={alertOpen}
+                className={`rounded border p-2 transition-colors ${
+                  alertCfg.notify || alertCfg.sound
+                    ? "border-amber-500/60 bg-amber-500/10 text-amber-300"
+                    : "border-slate-700 bg-slate-900 text-slate-300 hover:text-white"
+                }`}
+              >
+                <Bell size={13} />
+              </button>
+              {alertOpen && (
+                <div className="absolute right-0 z-[600] mt-2 w-64 rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl">
+                  <h3 className="text-xs font-bold text-white">{t.alertsTitle}</h3>
+                  <label className="mt-3 block text-[11px] text-slate-300">
+                    {t.alertThreshold}: <span className="font-mono font-bold text-amber-300">{alertCfg.threshold}</span>
+                    <input
+                      type="range"
+                      min={50}
+                      max={90}
+                      step={5}
+                      value={alertCfg.threshold}
+                      onChange={(e) => updateAlerts({ threshold: Number(e.target.value) })}
+                      className="mt-1 w-full accent-amber-400"
+                    />
+                  </label>
+                  <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={alertCfg.notify}
+                      onChange={(e) => updateAlerts({ notify: e.target.checked })}
+                      className="accent-sky-400"
+                    />
+                    {t.notifyBrowser}
+                  </label>
+                  <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={alertCfg.sound}
+                      onChange={(e) => updateAlerts({ sound: e.target.checked })}
+                      className="accent-sky-400"
+                    />
+                    {t.alertSound}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={testAlert}
+                    className="mt-3 w-full rounded border border-slate-700 px-2 py-1.5 text-[11px] text-slate-200 hover:border-sky-500"
+                  >
+                    {t.testAlert}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -601,6 +814,16 @@ export default function App() {
                       placeholder={t.search}
                       className="w-full bg-transparent text-xs text-slate-100 outline-none"
                     />
+                    <button
+                      type="button"
+                      onClick={toggleFav}
+                      title={t.favsTitle}
+                      aria-label={t.favsTitle}
+                      aria-pressed={isFav}
+                      className={`ml-2 shrink-0 rounded p-1 transition-colors ${isFav ? "text-amber-300" : "text-slate-500 hover:text-amber-200"}`}
+                    >
+                      <Star size={14} fill={isFav ? "currentColor" : "none"} />
+                    </button>
                   </div>
                   {searchOpen && matches.length > 0 && (
                     <div className="absolute z-[500] mt-1 max-h-60 w-full overflow-auto rounded-lg border border-slate-700 bg-slate-900 p-1 shadow-xl">
@@ -697,6 +920,37 @@ export default function App() {
                   <option value="seismic-tremor">{t.scenarioSeismic}</option>
                 </select>
               </div>
+
+              {/* Kegemaran pantas */}
+              {favs.length > 0 && (
+                <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="flex items-center gap-1 text-slate-400">
+                    <Star size={12} className="text-amber-300" /> {t.favsTitle}:
+                  </span>
+                  {favs.map((f) => (
+                    <span
+                      key={`${f.lat},${f.lon}`}
+                      className="inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-900 py-1 pl-2.5 pr-1 text-slate-200"
+                    >
+                      <button type="button" onClick={() => pickLocation(f.name, f.lat, f.lon, f.state, false)} className="hover:text-white">
+                        {f.name}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`${t.removeFav} ${f.name}`}
+                        onClick={() => {
+                          const next = favs.filter((x) => !(Math.abs(x.lat - f.lat) < 1e-4 && Math.abs(x.lon - f.lon) < 1e-4));
+                          setFavs(next);
+                          saveFavs(next);
+                        }}
+                        className="rounded p-0.5 text-slate-500 hover:text-red-300"
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {/* Layer toggles & Map hint */}
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800/80 pt-3 text-xs">
@@ -889,7 +1143,31 @@ export default function App() {
 
             {/* Primary 2-Column Split: Interactive Map (Left) + Risk & Proximity Telemetry (Right) */}
             <section className="grid items-stretch gap-6 lg:grid-cols-[1fr_420px]">
-              <div className="iris-surface flex flex-col justify-between p-4">
+              <div ref={mapWrapRef} className="iris-surface flex flex-col justify-between p-4">
+                {measuring && (
+                  <div className="mb-2 flex flex-wrap items-center gap-2 rounded border border-amber-500/40 bg-amber-500/5 px-3 py-2 font-mono text-[11px] text-amber-200 tabular-nums">
+                    <Ruler size={12} />
+                    <span>
+                      {measurePts.length < 2
+                        ? t.measureHint
+                        : `${measurePts.length} titik · ${measure.legs.map((l) => `${l}`).join(" + ")} = ${measure.total} km`}
+                    </span>
+                    <span className="flex-1" />
+                    <button type="button" onClick={() => setMeasurePts([])} className="underline hover:text-white">
+                      {t.measureClear}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMeasuring(false);
+                        setMeasurePts([]);
+                      }}
+                      className="underline hover:text-white"
+                    >
+                      {t.measureDone}
+                    </button>
+                  </div>
+                )}
                 <MapView
                   lat={lat}
                   lon={lon}
@@ -900,10 +1178,37 @@ export default function App() {
                   corridorPoints={activeCorridorObj?.points ?? []}
                   show={show}
                   onSelectPoint={onMapPointClick}
+                  measurePoints={measurePts}
                 />
 
                 {/* Quick Strategic Presets Bar below map */}
                 <div className="no-print mt-3 flex flex-wrap items-center gap-2 pt-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMeasuring((v) => !v);
+                      setMeasurePts([]);
+                    }}
+                    title={t.measureTitle}
+                    aria-pressed={measuring}
+                    className={`inline-flex items-center gap-1 rounded border px-2.5 py-1 whitespace-nowrap shrink-0 transition-colors ${
+                      measuring
+                        ? "border-amber-500/60 bg-amber-500/10 text-amber-200"
+                        : "border-slate-800 bg-slate-900/90 text-slate-300 hover:border-sky-500/50 hover:text-white"
+                    }`}
+                  >
+                    <Ruler size={12} />
+                    {t.measureTitle}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleMapFullscreen}
+                    title={t.fullscreenTitle}
+                    className="inline-flex items-center gap-1 rounded border border-slate-800 bg-slate-900/90 px-2.5 py-1 text-slate-300 hover:border-sky-500/50 hover:text-white whitespace-nowrap shrink-0 transition-colors"
+                  >
+                    {isFullscreen ? <Minimize size={12} /> : <Maximize size={12} />}
+                    {t.fullscreenTitle}
+                  </button>
                   <span className="text-slate-400">Pintas Strategik:</span>
                   {[
                     { name: "Port Klang", lat: 2.999, lon: 101.392, state: "Selangor" },
@@ -956,6 +1261,25 @@ export default function App() {
                         </div>
                       </div>
                       <p className="mt-2 text-xs leading-relaxed text-slate-400">{result.risk.methodology}</p>
+                      <div className="no-print mt-2.5 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={shareAnalysis}
+                          className="inline-flex items-center gap-1.5 rounded border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-sky-300 hover:border-sky-500 whitespace-nowrap shrink-0"
+                        >
+                          <Share2 size={12} />
+                          {t.shareBtn}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={exportAnalysisCsv}
+                          className="inline-flex items-center gap-1.5 rounded border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-200 hover:border-slate-500 whitespace-nowrap shrink-0"
+                        >
+                          <Download size={12} />
+                          {t.exportCsv}
+                        </button>
+                        {shareMsg && <span className="text-[11px] text-emerald-300">{shareMsg}</span>}
+                      </div>
                     </div>
 
                     {/* Transparent Factor Table */}
@@ -1145,6 +1469,165 @@ export default function App() {
                       </ul>
                     </div>
                   </div>
+                </div>
+              </section>
+            )}
+
+            {/* Banding Lokasi A (semasa) vs B */}
+            {result && (
+              <section className="iris-surface p-5">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-3">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+                    <GitCompareArrows size={15} className="text-sky-400" />
+                    {t.compareTitle}
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={compareName}
+                      onChange={(e) => {
+                        setCompareName(e.target.value);
+                        setCompareResult(null);
+                      }}
+                      className="rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-slate-100 outline-none"
+                    >
+                      <option value="">{t.compareSelect}</option>
+                      {((ref?.locations ?? []) as any[]).map((l: any) => (
+                        <option key={l.name} value={l.name}>
+                          {l.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={runCompare}
+                      disabled={compareBusy || !compareName}
+                      className="rounded bg-sky-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50 whitespace-nowrap shrink-0"
+                    >
+                      {t.compareRun}
+                    </button>
+                  </div>
+                </div>
+                {compareBusy ? (
+                  <p className="py-6 text-center text-xs text-slate-400">Menganalisis lokasi B…</p>
+                ) : compareResult ? (
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full border-collapse text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400">
+                          <th className="py-2 pr-4 font-medium">Metrik</th>
+                          <th className="px-3 py-2 font-medium">A · {result.label}</th>
+                          <th className="px-3 py-2 font-medium">B · {compareResult.label}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/70">
+                        {[
+                          ["Status / Skor", `${result.risk.status} (${result.risk.score})`, `${compareResult.risk.status} (${compareResult.risk.score})`, true],
+                          ["Zon", result.zone, compareResult.zone, false],
+                          ["Suhu (°C)", result.weather?.current?.temperature_2m ?? "—", compareResult.weather?.current?.temperature_2m ?? "—", false],
+                          ["Hujan maks (%)", result.weather?.precipProbMax ?? "—", compareResult.weather?.precipProbMax ?? "—", false],
+                          ["Ombak (m)", result.marine?.waveHeightM ?? "—", compareResult.marine?.waveHeightM ?? "—", false],
+                          ["IPU", result.airQuality?.ipu?.live ? `${result.airQuality.ipu.ipu} ${result.airQuality.ipu.categoryMs}` : "—", compareResult.airQuality?.ipu?.live ? `${compareResult.airQuality.ipu.ipu} ${compareResult.airQuality.ipu.categoryMs}` : "—", false],
+                          ["Gempa M4+ (30h)", result.quakes?.count ?? "—", compareResult.quakes?.count ?? "—", false],
+                        ].map(([m, a, b, hot]) => (
+                          <tr key={m as string} className="hover:bg-slate-900/60">
+                            <td className="py-2 pr-4 text-slate-400">{m}</td>
+                            <td className={`px-3 py-2 font-mono tabular-nums ${hot ? "font-bold text-white" : "text-slate-200"}`}>{a}</td>
+                            <td className={`px-3 py-2 font-mono tabular-nums ${hot ? "font-bold text-white" : "text-slate-200"}`}>{b}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs text-slate-500">{t.compareHint}</p>
+                )}
+              </section>
+            )}
+
+            {/* Kegemaran & Sejarah + Trend Skor */}
+            {(favs.length > 0 || history.length > 0) && (
+              <section className="grid gap-6 lg:grid-cols-2">
+                <div className="iris-surface p-5">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+                    <Star size={14} className="text-amber-300" />
+                    {t.historyTitle}
+                  </h3>
+                  {history.length > 1 && (
+                    <svg viewBox="0 0 400 80" className="mt-3 h-20 w-full" role="img" aria-label={t.trendTitle}>
+                      {(() => {
+                        const pts = history.slice(0, 20).reverse();
+                        const max = 100;
+                        const xy = pts.map((h: HistoryEntry, i: number) => [
+                          8 + (i * 384) / Math.max(1, pts.length - 1),
+                          72 - (Math.min(max, h.score) / max) * 64,
+                        ]);
+                        const yT = 72 - (alertCfg.threshold / max) * 64;
+                        return (
+                          <g>
+                            <line x1={8} y1={yT} x2={392} y2={yT} stroke="#f87171" strokeWidth={1} strokeDasharray="5 4" opacity={0.7}>
+                              <title>{`${t.alertThreshold}: ${alertCfg.threshold}`}</title>
+                            </line>
+                            <polyline
+                              points={xy.map((p) => p.join(",")).join(" ")}
+                              fill="none"
+                              stroke="#38bdf8"
+                              strokeWidth={2}
+                            />
+                            {xy.map((p, i) => (
+                              <circle key={i} cx={p[0]} cy={p[1]} r={3} fill={pts[i].score >= alertCfg.threshold ? "#f87171" : "#38bdf8"}>
+                                <title>{`${pts[i].label}: ${pts[i].status} (${pts[i].score})`}</title>
+                              </circle>
+                            ))}
+                          </g>
+                        );
+                      })()}
+                    </svg>
+                  )}
+                  <ul className="mt-3 max-h-56 space-y-1.5 overflow-auto text-xs">
+                    {history.slice(0, 8).map((h: HistoryEntry, i: number) => (
+                      <li key={`${h.time}-${i}`} className="flex items-center justify-between gap-2 border-b border-slate-800/60 pb-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLat(h.lat); setLon(h.lon); setQ(h.label);
+                            analyzeTarget(h.lat, h.lon, h.label, asset, stateSel, scenario, customNotes);
+                          }}
+                          className="truncate text-left text-slate-200 hover:text-white"
+                        >
+                          {h.label}
+                        </button>
+                        <span className="shrink-0 font-mono tabular-nums text-[11px] text-slate-500">
+                          {new Date(h.time).toLocaleString("ms-MY", { hour12: false }).slice(0, 16)}
+                          {" · "}
+                          <span className={`font-bold ${RISK_TEXT_STYLE[h.status] ?? "text-slate-300"}`}>{h.score}</span>
+                        </span>
+                      </li>
+                    ))}
+                    {history.length === 0 && <li className="text-slate-500">—</li>}
+                  </ul>
+                </div>
+                <div className="iris-surface p-5">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+                    <Star size={14} className="text-amber-300" />
+                    {t.favsTitle} ({favs.length}/12)
+                  </h3>
+                  <ul className="mt-3 space-y-1.5 text-xs">
+                    {favs.map((f) => (
+                      <li key={`${f.lat},${f.lon}`} className="flex items-center justify-between gap-2 border-b border-slate-800/60 pb-1.5">
+                        <button
+                          type="button"
+                          onClick={() => pickLocation(f.name, f.lat, f.lon, f.state, false)}
+                          className="truncate text-left text-slate-200 hover:text-white"
+                        >
+                          {f.name} <span className="text-slate-500">· {f.state}</span>
+                        </button>
+                        <span className="shrink-0 font-mono tabular-nums text-[11px] text-slate-500">
+                          {f.lat.toFixed(2)}, {f.lon.toFixed(2)}
+                        </span>
+                      </li>
+                    ))}
+                    {favs.length === 0 && <li className="text-slate-500">{t.favsEmpty}</li>}
+                  </ul>
                 </div>
               </section>
             )}

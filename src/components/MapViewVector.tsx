@@ -149,6 +149,7 @@ export default function MapViewVector({
   corridorPoints = [],
   show,
   onSelectPoint,
+  measurePoints = [],
 }: {
   lat: number;
   lon: number;
@@ -165,6 +166,7 @@ export default function MapViewVector({
     rangeRings?: boolean;
   };
   onSelectPoint?: (lat: number, lon: number) => void;
+  measurePoints?: [number, number][];
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [theme, setTheme] = useState<MapTheme>("dark");
@@ -617,6 +619,30 @@ export default function MapViewVector({
             <circle cx={tx} cy={ty} r={7 / zoom} fill="rgba(2, 132, 199, 0.35)" stroke="#38bdf8" strokeWidth={2 / zoom} />
             <circle cx={tx} cy={ty} r={2.5 / zoom} fill="#ffffff" />
           </g>
+
+          {/* Laluan ukuran (mod ukur) */}
+          {measurePoints.length > 0 && (
+            <g>
+              <polyline
+                points={measurePoints.map(([la, lo]) => project(la, lo).join(",")).join(" ")}
+                fill="none"
+                stroke="#eab308"
+                strokeWidth={2.5 / zoom}
+                strokeDasharray="7 5"
+              />
+              {measurePoints.map(([la, lo], i) => {
+                const [px, py] = project(la, lo);
+                return (
+                  <g key={i}>
+                    <circle cx={px} cy={py} r={6 / zoom} fill="#eab308" stroke="#713f12" strokeWidth={1.5 / zoom} />
+                    <text x={px} y={py - 9 / zoom} fill="#fde68a" fontSize={11 / zoom} textAnchor="middle" fontFamily="monospace" fontWeight="bold">
+                      {i + 1}
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
+          )}
         </g>
       </svg>
 
