@@ -9,6 +9,7 @@ import {
   Radar,
   ArrowRight,
   Activity,
+  ExternalLink,
 } from "lucide-react";
 import { api } from "../lib/api";
 import type { STR } from "../lib/i18n";
@@ -147,7 +148,18 @@ export default function LandingPage({
           </button>
         </div>
 
-        <p className="landing-anim landing-anim-5 mt-5 flex items-center justify-center gap-2 font-mono text-xs text-slate-400">
+        <p className="landing-anim landing-anim-5 mt-5 flex flex-wrap items-center justify-center gap-2 font-mono text-xs text-slate-400">
+          <a
+            href="https://iris-xygb.onrender.com"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 underline underline-offset-4 hover:text-sky-300 transition-colors"
+          >
+            <ExternalLink size={12} />
+            {lang === "ms" ? "Versi live di Render" : "Live version on Render"}
+          </a>
+        </p>
+        <p className="landing-anim landing-anim-5 mt-2 flex items-center justify-center gap-2 font-mono text-xs text-slate-400">
           <span className={`inline-block h-2 w-2 rounded-full ${health ? "landing-pulse bg-emerald-400" : "bg-slate-600"}`} />
           {health
             ? `${lang === "ms" ? "Backend LIVE" : "Backend LIVE"} · ${(health.sources ?? []).length} ${lang === "ms" ? "sumber" : "sources"}`

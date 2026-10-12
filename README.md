@@ -20,6 +20,7 @@ npm run build; npm start  # produksi (Render: build cmd npm run build, start cmd
 - §10 Ujian (`tests/iris.spec.ts`) — Port Klang, KLIA, Kelantan, Sabah, Sarawak, kastam, penolakan asing, data hilang, dakwaan tanpa sokongan, suntikan prompt.
 
 ## Deploy (Render)
+- Live: https://iris-xygb.onrender.com
 - Build: `npm install; npm run build` · Start: `npm start` · Env: `PORT` automatik.
 
 ## Login OpenSky (kuota flights lebih tinggi)
