@@ -12,12 +12,17 @@ export interface GoogleUser {
 const GIS_SRC = "https://accounts.google.com/gsi/client";
 let gisPromise: Promise<void> | null = null;
 
+/** Client ID awam (bukan rahsia — terdedah di frontend mengikut reka bentuk Google). */
+const FALLBACK_CLIENT_ID = "969707902481-ljd444kfn0h596b28affbvsb2mok3112.apps.googleusercontent.com";
+
 export function getGoogleClientId(): string {
   try {
-    return (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID ?? "";
+    const fromEnv = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID ?? "";
+    if (typeof fromEnv === "string" && fromEnv.trim() !== "") return fromEnv.trim();
   } catch {
-    return "";
+    /* abaikan */
   }
+  return FALLBACK_CLIENT_ID;
 }
 
 /** Muat skrip GIS sekali sahaja (selamat tanpa pelayar). */

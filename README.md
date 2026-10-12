@@ -31,7 +31,8 @@ npm run build; npm start  # produksi (Render: build cmd npm run build, start cmd
 - Di Vercel: tambah kedua-dua env di Project Settings → Environment Variables, kemudian redeploy.
 
 ## Login Google (pilihan)
-- Set `VITE_GOOGLE_CLIENT_ID` (Google Cloud Console → Credentials → OAuth client ID; authorized origin = URL deployment). Tanpa ini butang login disembunyi.
+- Client ID lalai dibina dalam app (`src/lib/googleAuth.ts`); override via `VITE_GOOGLE_CLIENT_ID` jika perlu.
+- Pastikan Authorized JavaScript origins di Google Cloud Console mengandungi URL deployment (Vercel/Render) + `http://localhost:5173`.
 - Kegemaran & sejarah diasing per pengguna Google; log keluar kembali ke data tanpa nama. Token ID hanya dibaca di klien (paparan), bukan kawalan akses pelayan.
 
 ## Deploy (Vercel)
