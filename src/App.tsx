@@ -620,6 +620,167 @@ export default function App() {
               </div>
             </section>
 
+            {/* Full-Width 4-Column Live Environmental & Sensor Telemetry Strip (di atas peta) */}
+            {result && (
+              <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                {/* 1. Weather Model */}
+                <div className="iris-surface p-4">
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>{t.wxNow}</span>
+                    <span className="font-mono tabular-nums text-sky-300">
+                      {result.weather?.live ? t.model : t.down}
+                    </span>
+                  </div>
+                  {result.weather?.live ? (
+                    <div className="mt-2">
+                      <div className="font-mono tabular-nums text-2xl font-bold text-white">
+                        {result.weather.current?.temperature_2m ?? "—"}°C
+                      </div>
+                      <p className="mt-1 font-mono tabular-nums text-xs text-slate-300">
+                        Angin {result.weather.current?.wind_speed_10m ?? "—"} km/j · Hujan maks {result.weather.precipProbMax ?? 0}%
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Kelembapan {result.weather.current?.relative_humidity_2m ?? "—"}% · Bukan amaran rasmi METMalaysia
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">{t.advisoriesNote}</p>
+                  )}
+                </div>
+
+                {/* 2. Marine & Wave State */}
+                <div className="iris-surface p-4">
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>{t.marineNow}</span>
+                    <span className="font-mono tabular-nums text-emerald-300">
+                      {result.marine?.live ? t.model : "DARATAN / TIADA"}
+                    </span>
+                  </div>
+                  {result.marine?.live ? (
+                    <div className="mt-2">
+                      <div className="font-mono tabular-nums text-2xl font-bold text-white">
+                        {result.marine.waveHeightM} m
+                      </div>
+                      <p className="mt-1 font-mono tabular-nums text-xs text-slate-300">
+                        Tempoh {result.marine.wavePeriodS ?? "—"} s · Arah {result.marine.waveDirectionDeg ?? "—"}°
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Maks 24j: {result.marine.maxWave24hM} m · Sahkan Jabatan Laut
+                      </p>
+                      {result.marine.tide ? (
+                        <div className="mt-2 border-t border-slate-700/60 pt-2">
+                          <p className="text-[11px] text-slate-400">{t.tide} (MSL)</p>
+                          <p className="mt-0.5 font-mono tabular-nums text-sm font-bold text-cyan-200">
+                            {result.marine.tide.currentM} m {TIDE_TREND_ARROW[result.marine.tide.trend] ?? ""}{" "}
+                            <span className="font-normal text-slate-300">{result.marine.tide.trend}</span>
+                          </p>
+                          <p className="mt-0.5 font-mono tabular-nums text-[11px] text-slate-300">
+                            {result.marine.tide.nextHigh
+                              ? `Pasang ${result.marine.tide.nextHigh.heightM} m @ ${String(result.marine.tide.nextHigh.time).slice(11, 16)}`
+                              : ""}
+                            {result.marine.tide.nextHigh && result.marine.tide.nextLow ? " · " : ""}
+                            {result.marine.tide.nextLow
+                              ? `Surut ${result.marine.tide.nextLow.heightM} m @ ${String(result.marine.tide.nextLow.time).slice(11, 16)}`
+                              : ""}
+                          </p>
+                          <p className="mt-0.5 text-[10px] text-slate-500">
+                            Model GTSM — datum MSL global, bukan LAT. Sahkan jadual rasmi.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-[11px] text-slate-500">
+                          Tiada data pasang surut model bagi koordinat ini (daratan/liputan terhad).
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-400">
+                      Pilih pelabuhan atau perairan (cth. Port Klang, Selat Melaka, ZEE) untuk bacaan ombak langsung.
+                    </p>
+                  )}
+                </div>
+
+                {/* 3. Air Quality & Haze */}
+                <div className="iris-surface p-4">
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>{t.aqNow}</span>
+                    <span className="font-mono tabular-nums text-sky-300">
+                      {result.airQuality?.live ? t.model : t.down}
+                    </span>
+                  </div>
+                  {result.airQuality?.live ? (
+                    <div className="mt-2">
+                      {result.airQuality.ipu?.live ? (
+                        <>
+                          <div
+                            className={`font-mono tabular-nums text-2xl font-bold ${IPU_TEXT_STYLE[result.airQuality.ipu.color] ?? "text-white"}`}
+                          >
+                            IPU {result.airQuality.ipu.ipu} ·{" "}
+                            {lang === "ms" ? result.airQuality.ipu.categoryMs : result.airQuality.ipu.categoryEn}
+                          </div>
+                          <p className="mt-1 font-mono tabular-nums text-xs text-slate-300">
+                            Dominan: {result.airQuality.ipu.dominant ?? "—"} · US AQI {result.airQuality.aqi ?? "—"} (rujukan)
+                          </p>
+                          <p className="mt-1 font-mono tabular-nums text-[11px] text-slate-400">
+                            {(result.airQuality.ipu.subIndices ?? [])
+                              .filter((s: any) => s.value != null)
+                              .map((s: any) => `${s.pollutant}: ${s.value}`)
+                              .join(" · ")}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <div className="font-mono tabular-nums text-2xl font-bold text-white">
+                            AQI {result.airQuality.aqi ?? "—"}
+                          </div>
+                          <p className="mt-1 font-mono tabular-nums text-xs text-slate-300">
+                            PM2.5: {result.airQuality.pm25 ?? "—"} µg/m³ · PM10: {result.airQuality.pm10 ?? "—"} µg/m³
+                          </p>
+                        </>
+                      )}
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Anggaran model gaya JAS — IPU rasmi di{" "}
+                        <a href="https://apims.doe.gov.my/" target="_blank" rel="noreferrer" className="text-sky-300 underline">
+                          JAS APIMS
+                        </a>
+                        .
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">Data kualiti udara tidak dapat dicapai.</p>
+                  )}
+                </div>
+
+                {/* 4. 30-Day USGS Seismic Timeline */}
+                <div className="iris-surface p-4">
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>{t.quakeHist}</span>
+                    <span className="font-mono tabular-nums text-amber-300">
+                      {result.quakes?.live ? `${result.quakes.count} M4+` : t.down}
+                    </span>
+                  </div>
+                  {timeline.length > 0 && (
+                    <svg viewBox="0 0 300 60" className="mt-2 h-14 w-full" role="img" aria-label={t.quakeHist}>
+                      {timeline.map((b: any, i: number) => (
+                        <rect
+                          key={b.date}
+                          x={i * 10}
+                          y={b.maxMag ? 60 - (b.maxMag / maxMag) * 56 : 58}
+                          width="8"
+                          height={b.maxMag ? (b.maxMag / maxMag) * 56 : 2}
+                          rx="1"
+                          fill={b.maxMag && b.maxMag >= 6 ? "#f87171" : "#f59e0b"}
+                          opacity={b.count ? 1 : 0.25}
+                        >
+                          <title>{`${b.date}: ${b.count} gempa, maks M${b.maxMag ?? "-"}`}</title>
+                        </rect>
+                      ))}
+                    </svg>
+                  )}
+                </div>
+              </section>
+            )}
+
             {/* Primary 2-Column Split: Interactive Map (Left) + Risk & Proximity Telemetry (Right) */}
             <section className="grid items-stretch gap-6 lg:grid-cols-[1fr_420px]">
               <div className="iris-surface flex flex-col justify-between p-4">
@@ -789,167 +950,6 @@ export default function App() {
                 </div>
               </div>
             </section>
-
-            {/* Full-Width 4-Column Live Environmental & Sensor Telemetry Strip */}
-            {result && (
-              <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                {/* 1. Weather Model */}
-                <div className="iris-surface p-4">
-                  <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>{t.wxNow}</span>
-                    <span className="font-mono tabular-nums text-sky-300">
-                      {result.weather?.live ? t.model : t.down}
-                    </span>
-                  </div>
-                  {result.weather?.live ? (
-                    <div className="mt-2">
-                      <div className="font-mono tabular-nums text-2xl font-bold text-white">
-                        {result.weather.current?.temperature_2m ?? "—"}°C
-                      </div>
-                      <p className="mt-1 font-mono tabular-nums text-xs text-slate-300">
-                        Angin {result.weather.current?.wind_speed_10m ?? "—"} km/j · Hujan maks {result.weather.precipProbMax ?? 0}%
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        Kelembapan {result.weather.current?.relative_humidity_2m ?? "—"}% · Bukan amaran rasmi METMalaysia
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-xs text-slate-500">{t.advisoriesNote}</p>
-                  )}
-                </div>
-
-                {/* 2. Marine & Wave State */}
-                <div className="iris-surface p-4">
-                  <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>{t.marineNow}</span>
-                    <span className="font-mono tabular-nums text-emerald-300">
-                      {result.marine?.live ? t.model : "DARATAN / TIADA"}
-                    </span>
-                  </div>
-                  {result.marine?.live ? (
-                    <div className="mt-2">
-                      <div className="font-mono tabular-nums text-2xl font-bold text-white">
-                        {result.marine.waveHeightM} m
-                      </div>
-                      <p className="mt-1 font-mono tabular-nums text-xs text-slate-300">
-                        Tempoh {result.marine.wavePeriodS ?? "—"} s · Arah {result.marine.waveDirectionDeg ?? "—"}°
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        Maks 24j: {result.marine.maxWave24hM} m · Sahkan Jabatan Laut
-                      </p>
-                      {result.marine.tide ? (
-                        <div className="mt-2 border-t border-slate-700/60 pt-2">
-                          <p className="text-[11px] text-slate-400">{t.tide} (MSL)</p>
-                          <p className="mt-0.5 font-mono tabular-nums text-sm font-bold text-cyan-200">
-                            {result.marine.tide.currentM} m {TIDE_TREND_ARROW[result.marine.tide.trend] ?? ""}{" "}
-                            <span className="font-normal text-slate-300">{result.marine.tide.trend}</span>
-                          </p>
-                          <p className="mt-0.5 font-mono tabular-nums text-[11px] text-slate-300">
-                            {result.marine.tide.nextHigh
-                              ? `Pasang ${result.marine.tide.nextHigh.heightM} m @ ${String(result.marine.tide.nextHigh.time).slice(11, 16)}`
-                              : ""}
-                            {result.marine.tide.nextHigh && result.marine.tide.nextLow ? " · " : ""}
-                            {result.marine.tide.nextLow
-                              ? `Surut ${result.marine.tide.nextLow.heightM} m @ ${String(result.marine.tide.nextLow.time).slice(11, 16)}`
-                              : ""}
-                          </p>
-                          <p className="mt-0.5 text-[10px] text-slate-500">
-                            Model GTSM — datum MSL global, bukan LAT. Sahkan jadual rasmi.
-                          </p>
-                        </div>
-                      ) : (
-                        <p className="mt-2 text-[11px] text-slate-500">
-                          Tiada data pasang surut model bagi koordinat ini (daratan/liputan terhad).
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-xs text-slate-400">
-                      Pilih pelabuhan atau perairan (cth. Port Klang, Selat Melaka, ZEE) untuk bacaan ombak langsung.
-                    </p>
-                  )}
-                </div>
-
-                {/* 3. Air Quality & Haze */}
-                <div className="iris-surface p-4">
-                  <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>{t.aqNow}</span>
-                    <span className="font-mono tabular-nums text-sky-300">
-                      {result.airQuality?.live ? t.model : t.down}
-                    </span>
-                  </div>
-                  {result.airQuality?.live ? (
-                    <div className="mt-2">
-                      {result.airQuality.ipu?.live ? (
-                        <>
-                          <div
-                            className={`font-mono tabular-nums text-2xl font-bold ${IPU_TEXT_STYLE[result.airQuality.ipu.color] ?? "text-white"}`}
-                          >
-                            IPU {result.airQuality.ipu.ipu} ·{" "}
-                            {lang === "ms" ? result.airQuality.ipu.categoryMs : result.airQuality.ipu.categoryEn}
-                          </div>
-                          <p className="mt-1 font-mono tabular-nums text-xs text-slate-300">
-                            Dominan: {result.airQuality.ipu.dominant ?? "—"} · US AQI {result.airQuality.aqi ?? "—"} (rujukan)
-                          </p>
-                          <p className="mt-1 font-mono tabular-nums text-[11px] text-slate-400">
-                            {(result.airQuality.ipu.subIndices ?? [])
-                              .filter((s: any) => s.value != null)
-                              .map((s: any) => `${s.pollutant}: ${s.value}`)
-                              .join(" · ")}
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <div className="font-mono tabular-nums text-2xl font-bold text-white">
-                            AQI {result.airQuality.aqi ?? "—"}
-                          </div>
-                          <p className="mt-1 font-mono tabular-nums text-xs text-slate-300">
-                            PM2.5: {result.airQuality.pm25 ?? "—"} µg/m³ · PM10: {result.airQuality.pm10 ?? "—"} µg/m³
-                          </p>
-                        </>
-                      )}
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        Anggaran model gaya JAS — IPU rasmi di{" "}
-                        <a href="https://apims.doe.gov.my/" target="_blank" rel="noreferrer" className="text-sky-300 underline">
-                          JAS APIMS
-                        </a>
-                        .
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-xs text-slate-500">Data kualiti udara tidak dapat dicapai.</p>
-                  )}
-                </div>
-
-                {/* 4. 30-Day USGS Seismic Timeline */}
-                <div className="iris-surface p-4">
-                  <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>{t.quakeHist}</span>
-                    <span className="font-mono tabular-nums text-amber-300">
-                      {result.quakes?.live ? `${result.quakes.count} M4+` : t.down}
-                    </span>
-                  </div>
-                  {timeline.length > 0 && (
-                    <svg viewBox="0 0 300 60" className="mt-2 h-14 w-full" role="img" aria-label={t.quakeHist}>
-                      {timeline.map((b: any, i: number) => (
-                        <rect
-                          key={b.date}
-                          x={i * 10}
-                          y={b.maxMag ? 60 - (b.maxMag / maxMag) * 56 : 58}
-                          width="8"
-                          height={b.maxMag ? (b.maxMag / maxMag) * 56 : 2}
-                          rx="1"
-                          fill={b.maxMag && b.maxMag >= 6 ? "#f87171" : "#f59e0b"}
-                          opacity={b.count ? 1 : 0.25}
-                        >
-                          <title>{`${b.date}: ${b.count} gempa, maks M${b.maxMag ?? "-"}`}</title>
-                        </rect>
-                      ))}
-                    </svg>
-                  )}
-                </div>
-              </section>
-            )}
 
             {/* 24-Hour Hourly Precipitation & Wind Forecast Bar + Verified Evidence */}
             {result && (
