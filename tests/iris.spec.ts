@@ -7,6 +7,7 @@ import { buildSitrep, listSitreps, deleteSitrep } from "../server/lib/sitrep";
 import { computeIPU, ipuCategory, parseTideSeries, subIndex, ugm3ToPpm } from "../server/lib/ipu";
 import { groupFlightsByAirport, FLIGHT_RADIUS_KM, mapAdsbLol, getOpenskyAuthMode, parseGoogleNewsRss, newsQueryFor } from "../server/lib/dataEngine";
 import { resolveTheme, THEMES } from "../src/lib/theme";
+import { decodeJwt, toGoogleUser } from "../src/lib/googleAuth";
 import { encodeShare, decodeShare, loadAlerts, DEFAULT_ALERTS, recordHistory } from "../src/lib/store";
 import { maybeAlert } from "../src/lib/notify";
 import { haversineKm as clientHaversineKm, measurePath } from "../src/lib/geo";
@@ -214,6 +215,14 @@ describe("Rujukan statik + ejen (peningkatan V2.0)", () => {
     expect(items[0].source).toBe("Sinar Harian");
     expect(items[0].published).toBe(new Date("2026-10-09T03:37:00Z").toISOString());
     expect(items[1].published).toBeNull();
+  });
+  it("login Google: JWT didekod + profil tanpa sub ditolak", () => {
+    const payload = { sub: "123", name: "Uji", email: "u@x.my", picture: "https://x/p.jpg" };
+    const b64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_");
+    const u = toGoogleUser(decodeJwt(`h.${b64}.s`) ?? {});
+    expect(u).toEqual(payload);
+    expect(toGoogleUser({} as any)).toBeNull();
+    expect(decodeJwt("bukan-token")).toBeNull();
   });
   it("tema: tiga tema sah; simpanan rosak → jatuh ke gelap", () => {
     expect(THEMES).toEqual(["dark", "light", "senior"]);

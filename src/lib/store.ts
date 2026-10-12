@@ -26,19 +26,22 @@ function write(key: string, val: unknown): void {
   }
 }
 
-export function loadFavs(): FavPlace[] {
-  const v = read<FavPlace[]>("iris-favs", []);
+const favKey = (userSub?: string | null) => (userSub ? `iris-favs-${userSub}` : "iris-favs");
+const histKey = (userSub?: string | null) => (userSub ? `iris-history-${userSub}` : "iris-history");
+
+export function loadFavs(userSub?: string | null): FavPlace[] {
+  const v = read<FavPlace[]>(favKey(userSub), []);
   return Array.isArray(v) ? v.filter((f) => f && Number.isFinite(f.lat) && Number.isFinite(f.lon)) : [];
 }
-export function saveFavs(favs: FavPlace[]): void { write("iris-favs", favs); }
+export function saveFavs(favs: FavPlace[], userSub?: string | null): void { write(favKey(userSub), favs); }
 
-export function loadHistory(): HistoryEntry[] {
-  const v = read<HistoryEntry[]>("iris-history", []);
+export function loadHistory(userSub?: string | null): HistoryEntry[] {
+  const v = read<HistoryEntry[]>(histKey(userSub), []);
   return Array.isArray(v) ? v : [];
 }
-export function recordHistory(e: HistoryEntry): HistoryEntry[] {
-  const h = [e, ...loadHistory()].slice(0, HISTORY_CAP);
-  write("iris-history", h);
+export function recordHistory(e: HistoryEntry, userSub?: string | null): HistoryEntry[] {
+  const h = [e, ...loadHistory(userSub)].slice(0, HISTORY_CAP);
+  write(histKey(userSub), h);
   return h;
 }
 

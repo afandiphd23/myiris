@@ -28,10 +28,12 @@ import {
   Newspaper,
   Landmark,
   Cpu,
+  LogOut,
 } from "lucide-react";
 import MapView from "./components/MapView";
 import LandingPage from "./components/LandingPage";
 import { loadAlerts, saveAlerts, loadFavs, saveFavs, loadHistory, recordHistory, encodeShare, decodeShare, type AlertConfig, type FavPlace, type HistoryEntry } from "./lib/store";
+import { getGoogleClientId, loadGis, decodeJwt, toGoogleUser, loadUser, saveUser, googleLogout, type GoogleUser } from "./lib/googleAuth";
 import { maybeAlert, ensureNotifyPermission, playBeep } from "./lib/notify";
 import { measurePath } from "./lib/geo";
 import { api } from "./lib/api";
@@ -164,8 +166,47 @@ export default function App() {
   // Amaran pintar / kegemaran & sejarah / banding / ukur / kongsi
   const [alertCfg, setAlertCfg] = useState<AlertConfig>(() => loadAlerts());
   const [alertOpen, setAlertOpen] = useState(false);
-  const [favs, setFavs] = useState<FavPlace[]>(() => loadFavs());
-  const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory());
+  const [favs, setFavs] = useState<FavPlace[]>(() => loadFavs(loadUser()?.sub));
+  const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory(loadUser()?.sub));
+  // Login Google (kegemaran & sejarah diasing per pengguna)
+  const [user, setUser] = useState<GoogleUser | null>(() => loadUser());
+  const gisBtnRef = useRef<HTMLDivElement>(null);
+  const googleClientId = getGoogleClientId();
+
+  const applyUser = (u: GoogleUser | null) => {
+    setUser(u);
+    saveUser(u);
+    setFavs(loadFavs(u?.sub));
+    setHistory(loadHistory(u?.sub));
+  };
+
+  useEffect(() => {
+    if (user || !googleClientId || !gisBtnRef.current) return;
+    let cancelled = false;
+    loadGis()
+      .then(() => {
+        if (cancelled || !gisBtnRef.current) return;
+        gisBtnRef.current.innerHTML = "";
+        (window as any).google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: (resp: any) => {
+            const u = toGoogleUser(decodeJwt(String(resp?.credential ?? "")) ?? {});
+            if (u) applyUser(u);
+          },
+        });
+        (window as any).google.accounts.id.renderButton(gisBtnRef.current, {
+          theme: "outline",
+          size: "medium",
+          text: "signin_with",
+          shape: "rectangular",
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
   const [compareName, setCompareName] = useState("");
   const [compareResult, setCompareResult] = useState<any>(null);
   const [compareBusy, setCompareBusy] = useState(false);
@@ -231,7 +272,7 @@ export default function App() {
       });
       setResult(r);
       setLastFetch(Date.now());
-      setHistory(recordHistory({ label: r.label, lat: targetLat, lon: targetLon, score: r.risk.score, status: r.risk.status, time: Date.now() }));
+      setHistory(recordHistory({ label: r.label, lat: targetLat, lon: targetLon, score: r.risk.score, status: r.risk.status, time: Date.now() }, user?.sub));
       maybeAlert(r);
       const h = await api<any>("/api/health").catch(() => null);
       if (h) setHealth(h);
@@ -343,7 +384,7 @@ export default function App() {
       ? favs.filter((f) => !(Math.abs(f.lat - lat) < 1e-4 && Math.abs(f.lon - lon) < 1e-4))
       : [...favs, { name: q || `${lat.toFixed(3)},${lon.toFixed(3)}`, lat, lon, state: stateSel }].slice(0, 12);
     setFavs(next);
-    saveFavs(next);
+    saveFavs(next, user?.sub);
   };
 
   // Banding lokasi B dengan hasil semasa
@@ -781,6 +822,34 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {googleClientId !== "" &&
+              (user ? (
+                <div className="flex items-center gap-2 rounded border border-slate-700 bg-slate-900 py-1 pl-1 pr-2">
+                  {user.picture ? (
+                    <img src={user.picture} alt="" referrerPolicy="no-referrer" className="h-6 w-6 rounded-full" />
+                  ) : (
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-500 text-[11px] font-bold text-slate-950">
+                      {(user.name || user.email || "?").slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  <span className="hidden max-w-[120px] truncate text-xs text-slate-200 xl:inline">{user.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      googleLogout();
+                      applyUser(null);
+                    }}
+                    title={t.logoutBtn}
+                    aria-label={t.logoutBtn}
+                    className="rounded p-1 text-slate-400 hover:text-white transition-colors"
+                  >
+                    <LogOut size={13} />
+                  </button>
+                </div>
+              ) : (
+                <div ref={gisBtnRef} className="gis-btn min-h-[32px]" />
+              ))}
           </div>
         </div>
       </div>
@@ -976,7 +1045,7 @@ export default function App() {
                         onClick={() => {
                           const next = favs.filter((x) => !(Math.abs(x.lat - f.lat) < 1e-4 && Math.abs(x.lon - f.lon) < 1e-4));
                           setFavs(next);
-                          saveFavs(next);
+                          saveFavs(next, user?.sub);
                         }}
                         className="rounded p-0.5 text-slate-500 hover:text-red-300"
                       >

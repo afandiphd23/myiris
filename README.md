@@ -30,6 +30,10 @@ npm run build; npm start  # produksi (Render: build cmd npm run build, start cmd
 - Fallback automatik: OpenSky → adsb.lol (komuniti) → data lewat terakhir (dilabel STALE).
 - Di Vercel: tambah kedua-dua env di Project Settings → Environment Variables, kemudian redeploy.
 
+## Login Google (pilihan)
+- Set `VITE_GOOGLE_CLIENT_ID` (Google Cloud Console → Credentials → OAuth client ID; authorized origin = URL deployment). Tanpa ini butang login disembunyi.
+- Kegemaran & sejarah diasing per pengguna Google; log keluar kembali ke data tanpa nama. Token ID hanya dibaca di klien (paparan), bukan kawalan akses pelayan.
+
 ## Deploy (Vercel)
 - Frontend: `vite build` → `dist/` · API: `api/index.ts` (Express dikongsi dari `server/app.ts`).
 - `vercel.json` me-rewrite `/api/:path*` → `/api`. Jika nampak `Respons bukan JSON (HTTP 404) ... NOT_FOUND`,
