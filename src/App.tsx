@@ -337,6 +337,22 @@ export default function App() {
   const forecast24h: any[] = result?.weather?.forecast24h ?? [];
   const activeCorridorObj = ((ref?.corridors ?? []) as any[]).find((c) => c.id === corridorId);
 
+  // Grafik flights: data terbitan daripada papan flights + penapis airport semasa
+  const flightBoardsAll: any[] = flights?.boards ?? [];
+  const maxBoardCount = Math.max(1, ...flightBoardsAll.map((b: any) => b.count ?? 0));
+  const altPool: any[] =
+    flightAirport === "all"
+      ? [...flightBoardsAll.flatMap((b: any) => b.flights ?? []), ...((flights?.enRoute ?? []) as any[])]
+      : (flightBoardsAll.find((b: any) => b.name === flightAirport)?.flights ?? []);
+  const ALT_BANDS: [number, number][] = [[0, 5000], [5000, 10000], [10000, 20000], [20000, 30000], [30000, 999999]];
+  const ALT_LABELS = ["0–5k", "5–10k", "10–20k", "20–30k", "30k+"];
+  const altCounts = ALT_BANDS.map(([lo, hi]) =>
+    altPool.filter((f: any) => f.altM != null && f.altM * 3.28084 >= lo && f.altM * 3.28084 < hi).length
+  );
+  const maxAltCount = Math.max(1, ...altCounts);
+  const altKnown = altCounts.reduce((a, c) => a + c, 0);
+  const shortAirportCode = (n: string) => n.match(/\(([^)]+)\)/)?.[1] ?? n.slice(0, 8);
+
   const filteredAudit = audit.filter((a) => (auditFilter === "all" ? true : a.kind === auditFilter));
 
   return (
@@ -1320,6 +1336,77 @@ export default function App() {
                       berjaya, bukan trafik semasa.
                     </p>
                   )}
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
+                      <h3 className="text-xs font-semibold text-slate-200">{t.flightsTraffic}</h3>
+                      <svg
+                        viewBox={`0 0 480 ${flightBoardsAll.length * 30 + 8}`}
+                        className="mt-3 w-full"
+                        role="img"
+                        aria-label={t.flightsTraffic}
+                      >
+                        {flightBoardsAll.map((b: any, i: number) => {
+                          const w = Math.max(3, ((b.count ?? 0) / maxBoardCount) * 300);
+                          return (
+                            <g key={b.name}>
+                              <text x={0} y={i * 30 + 19} fill="#94a3b8" fontSize="12" fontFamily="monospace">
+                                {shortAirportCode(b.name)}
+                              </text>
+                              <rect
+                                x={64}
+                                y={i * 30 + 6}
+                                width={w}
+                                height={16}
+                                rx={3}
+                                fill={(b.count ?? 0) > 0 ? "#38bdf8" : "#1e293b"}
+                                opacity={(b.count ?? 0) > 0 ? 0.9 : 1}
+                              >
+                                <title>{`${b.name}: ${b.count ?? 0} trafik`}</title>
+                              </rect>
+                              <text x={70 + w} y={i * 30 + 19} fill="#e2e8f0" fontSize="12" fontFamily="monospace">
+                                {b.count ?? 0}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </svg>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
+                      <h3 className="text-xs font-semibold text-slate-200">
+                        {t.flightsAlt}
+                        {flightAirport !== "all" && <span className="font-normal text-slate-400"> · {flightAirport}</span>}
+                      </h3>
+                      <svg viewBox="0 0 300 96" className="mt-3 h-28 w-full" role="img" aria-label={t.flightsAlt}>
+                        {altCounts.map((c, i) => {
+                          const h = Math.max(3, (c / maxAltCount) * 62);
+                          return (
+                            <g key={ALT_LABELS[i]}>
+                              <rect
+                                x={i * 60 + 12}
+                                y={74 - h}
+                                width={36}
+                                height={h}
+                                rx={2}
+                                fill="#38bdf8"
+                                opacity={c ? 0.9 : 0.25}
+                              >
+                                <title>{`${ALT_LABELS[i]} ft: ${c} pesawat`}</title>
+                              </rect>
+                              <text x={i * 60 + 30} y={70 - h} fill="#e2e8f0" fontSize="10" textAnchor="middle" fontFamily="monospace">
+                                {c}
+                              </text>
+                              <text x={i * 60 + 30} y={88} fill="#94a3b8" fontSize="9" textAnchor="middle" fontFamily="monospace">
+                                {ALT_LABELS[i]}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </svg>
+                      <p className="mt-1 font-mono tabular-nums text-[11px] text-slate-500">
+                        {altKnown} beraltitud · {altPool.length - altKnown} tanpa bacaan altitud
+                      </p>
+                    </div>
+                  </div>
                   {((flightAirport === "all" ? flights.boards : flights.boards.filter((b: any) => b.name === flightAirport)) as any[]).map(
                     (b: any) => (
                       <div key={b.name} className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
